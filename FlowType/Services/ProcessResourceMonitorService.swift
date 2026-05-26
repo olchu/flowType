@@ -1,10 +1,13 @@
 import Darwin
 import Foundation
 
-struct ProcessResourceMonitorService {
+final class ProcessResourceMonitorService {
+    private var previousCPUTime: Double?
+    private var previousUptime: TimeInterval?
+
     func currentUsage() -> ProcessResourceUsage {
         ProcessResourceUsage(
-            cpuPercent: currentCPUPercent(),
+            cpuPercent: averagedCPUPercent(),
             memoryBytes: currentMemoryBytes()
         )
     }
@@ -30,43 +33,47 @@ struct ProcessResourceMonitorService {
         return UInt64(info.resident_size)
     }
 
-    private func currentCPUPercent() -> Double {
-        var threadList: thread_act_array_t?
-        var threadCount: mach_msg_type_number_t = 0
+    private func averagedCPUPercent() -> Double {
+        guard let currentCPUTime = currentCPUTime() else { return 0 }
 
-        let threadsResult = task_threads(mach_task_self_, &threadList, &threadCount)
-        guard threadsResult == KERN_SUCCESS, let threadList else { return 0 }
-
+        let currentUptime = ProcessInfo.processInfo.systemUptime
         defer {
-            let size = vm_size_t(Int(threadCount) * MemoryLayout<thread_t>.stride)
-            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: threadList), size)
+            previousCPUTime = currentCPUTime
+            previousUptime = currentUptime
         }
 
-        var totalCPU: Double = 0
+        guard let previousCPUTime, let previousUptime else { return 0 }
 
-        for index in 0..<Int(threadCount) {
-            var info = thread_basic_info()
-            var count = mach_msg_type_number_t(THREAD_INFO_MAX)
+        let cpuDelta = currentCPUTime - previousCPUTime
+        let uptimeDelta = currentUptime - previousUptime
+        guard cpuDelta >= 0, uptimeDelta > 0 else { return 0 }
 
-            let infoResult = withUnsafeMutablePointer(to: &info) { pointer in
-                pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPointer in
-                    thread_info(
-                        threadList[index],
-                        thread_flavor_t(THREAD_BASIC_INFO),
-                        reboundPointer,
-                        &count
-                    )
-                }
-            }
+        return cpuDelta / uptimeDelta * 100
+    }
 
-            guard infoResult == KERN_SUCCESS else { continue }
+    private func currentCPUTime() -> Double? {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info_data_t>.size / MemoryLayout<natural_t>.size
+        )
 
-            let isIdle = (info.flags & TH_FLAGS_IDLE) != 0
-            if !isIdle {
-                totalCPU += Double(info.cpu_usage) / Double(TH_USAGE_SCALE) * 100
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPointer in
+                task_info(
+                    mach_task_self_,
+                    task_flavor_t(MACH_TASK_BASIC_INFO),
+                    reboundPointer,
+                    &count
+                )
             }
         }
 
-        return totalCPU
+        guard result == KERN_SUCCESS else { return nil }
+
+        return timeValueInSeconds(info.user_time) + timeValueInSeconds(info.system_time)
+    }
+
+    private func timeValueInSeconds(_ timeValue: time_value_t) -> Double {
+        Double(timeValue.seconds) + Double(timeValue.microseconds) / 1_000_000
     }
 }

@@ -111,8 +111,15 @@ final class AppState: ObservableObject {
         guard canStopRecording else { return }
 
         audioLevel = 0
-        status = .transcribing
         let audio = audioRecorder.stopRecording()
+
+        guard audio.containsLikelySpeech else {
+            lastTranscript = ""
+            status = .ready
+            return
+        }
+
+        status = .transcribing
 
         Task {
             do {
