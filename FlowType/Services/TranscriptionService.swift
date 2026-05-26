@@ -3,8 +3,6 @@ import WhisperKit
 
 @MainActor
 final class TranscriptionService {
-    private static let modelRepo = "argmaxinc/whisperkit-coreml"
-
     enum TranscriptionError: LocalizedError {
         case emptyRecording
         case missingAudioFile
@@ -76,7 +74,7 @@ final class TranscriptionService {
 
         let config = WhisperKitConfig(
             model: model.whisperKitIdentifier,
-            modelRepo: Self.modelRepo,
+            modelRepo: TranscriptionModel.repository,
             verbose: false,
             logLevel: .error,
             prewarm: shouldPrewarm,
@@ -88,5 +86,11 @@ final class TranscriptionService {
         self.pipeline = pipeline
         loadedModel = model
         return pipeline
+    }
+
+    func resetLoadedModel(ifMatching model: TranscriptionModel) {
+        guard loadedModel == model else { return }
+        pipeline = nil
+        loadedModel = nil
     }
 }

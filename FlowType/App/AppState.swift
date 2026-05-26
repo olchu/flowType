@@ -14,24 +14,52 @@ final class AppState: ObservableObject {
     @Published private(set) var microphonePermission: PermissionStatus = .unknown
     @Published private(set) var isModelWarmingUp = false
     @Published private(set) var modelWarmupMessage = "Model is not loaded yet."
+    @Published private(set) var modelStorageStates: [TranscriptionModel: ModelStorageState] = [:]
 
     private let audioRecorder = AudioRecorderService()
     private let hotkeyService = HotkeyService()
     private let permissionsService = PermissionsService()
     private let transcriptionService = TranscriptionService()
     private let pasteService = PasteService()
+    private let modelStorageService = ModelStorageService()
     private var dictationTargetApplication: NSRunningApplication?
 
     init() {
         refreshPermissions()
+        refreshModelStorageStates()
         configureHotkey()
         prewarmCurrentModel()
+    }
+
+    var isReadyForUse: Bool {
+        microphonePermission.isGranted
+            && hasAccessibilityPermission
+            && isHotkeyRunning
+            && !isModelWarmingUp
+            && modelStorageStates[settings.profile.model] == .downloaded
+            && status != .error
+    }
+
+    var menuStatusText: String {
+        if isReadyForUse {
+            return "Ready to use"
+        }
+
+        switch status {
+        case .recording, .transcribing:
+            return status.rawValue
+        case .error:
+            return "Needs attention"
+        case .ready:
+            return isModelWarmingUp ? "Preparing model" : "Not ready"
+        }
     }
 
     var canStartRecording: Bool {
         (status == .ready || status == .error)
             && microphonePermission.isGranted
             && !isModelWarmingUp
+            && modelStorageStates[settings.profile.model] == .downloaded
     }
 
     var canStopRecording: Bool {
@@ -90,6 +118,11 @@ final class AppState: ObservableObject {
         guard !isModelWarmingUp else { return }
 
         let model = settings.profile.model
+        guard modelStorageStates[model] == .downloaded else {
+            modelWarmupMessage = "\(model.rawValue) is not downloaded."
+            return
+        }
+
         isModelWarmingUp = true
         modelWarmupMessage = "Loading \(settings.profile.rawValue) (\(model.rawValue))..."
 
@@ -97,12 +130,47 @@ final class AppState: ObservableObject {
             do {
                 try await transcriptionService.prewarm(model: model)
                 modelWarmupMessage = "\(model.rawValue) is ready."
+                refreshModelStorageStates()
             } catch {
                 modelWarmupMessage = "Could not load \(model.rawValue)."
                 showError(error)
             }
 
             isModelWarmingUp = false
+        }
+    }
+
+    func download(_ model: TranscriptionModel) {
+        modelStorageStates[model] = .downloading
+
+        Task {
+            do {
+                try await modelStorageService.download(model)
+                modelStorageStates[model] = .downloaded
+                if model == settings.profile.model {
+                    prewarmCurrentModel()
+                }
+            } catch {
+                modelStorageStates[model] = .error(error.localizedDescription)
+            }
+        }
+    }
+
+    func delete(_ model: TranscriptionModel) {
+        modelStorageStates[model] = .deleting
+
+        Task {
+            do {
+                try modelStorageService.delete(model)
+                transcriptionService.resetLoadedModel(ifMatching: model)
+                modelStorageStates[model] = .notDownloaded
+                if model == settings.profile.model {
+                    isModelWarmingUp = false
+                    modelWarmupMessage = "\(model.rawValue) was deleted."
+                }
+            } catch {
+                modelStorageStates[model] = .error(error.localizedDescription)
+            }
         }
     }
 
@@ -128,6 +196,14 @@ final class AppState: ObservableObject {
     func refreshPermissions() {
         hasAccessibilityPermission = permissionsService.hasAccessibilityPermission
         microphonePermission = PermissionStatus(permissionsService.microphoneAuthorizationStatus)
+    }
+
+    func refreshModelStorageStates() {
+        for model in TranscriptionModel.availableModels {
+            modelStorageStates[model] = modelStorageService.isDownloaded(model)
+                ? .downloaded
+                : .notDownloaded
+        }
     }
 
     private func configureHotkey() {

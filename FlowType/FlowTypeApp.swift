@@ -20,9 +20,10 @@ struct FlowTypeApp: App {
         }
         .menuBarExtraStyle(.menu)
 
-        Settings {
+        Window("FlowType Settings", id: "settings") {
             SettingsView()
                 .environmentObject(appState)
         }
+        .windowResizability(.contentSize)
     }
 }

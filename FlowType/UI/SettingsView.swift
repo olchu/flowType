@@ -5,97 +5,202 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Permissions") {
-                LabeledContent("Microphone") {
-                    Text(appState.microphonePermission.rawValue)
-                        .foregroundStyle(appState.microphonePermission.isGranted ? Color.secondary : Color.red)
-                }
-
-                LabeledContent("Accessibility") {
-                    Text(appState.hasAccessibilityPermission ? "Granted" : "Missing")
-                        .foregroundStyle(appState.hasAccessibilityPermission ? Color.secondary : Color.red)
-                }
-
-                HStack {
-                    Button("Grant Microphone") {
-                        appState.requestMicrophonePermission()
-                    }
-                    .disabled(appState.microphonePermission.isGranted)
-
-                    Button("Open Accessibility Settings") {
-                        appState.requestAccessibilityPermission()
-                    }
-                    .disabled(appState.hasAccessibilityPermission)
-
-                    Button("Refresh") {
-                        appState.refreshPermissions()
-                    }
-                }
-            }
-
-            Section("Transcription") {
-                Picker("Profile", selection: $appState.settings.profile) {
-                    ForEach(TranscriptionProfile.allCases) { profile in
-                        Text(profile.rawValue).tag(profile)
-                    }
-                }
-                .onChange(of: appState.settings.profile) {
-                    appState.prewarmCurrentModel()
-                }
-
-                Text(appState.settings.profile.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                LabeledContent("Model") {
-                    Text(appState.settings.profile.model.rawValue)
-                        .foregroundStyle(.secondary)
-                }
-
-                LabeledContent("Model status") {
-                    Text(appState.modelWarmupMessage)
-                        .foregroundStyle(appState.isModelWarmingUp ? Color.orange : Color.secondary)
-                }
-
-                Picker("Language", selection: $appState.settings.language) {
-                    ForEach(TranscriptionLanguage.allCases) { language in
-                        Text(language.rawValue).tag(language)
-                    }
-                }
-            }
-
-            Section("Paste") {
-                Toggle("Auto paste", isOn: $appState.settings.autoPaste)
-                Toggle("Restore clipboard after paste", isOn: $appState.settings.restoreClipboard)
-            }
-
-            Section("Hotkey") {
-                LabeledContent("Default") {
-                    Text("Fn")
-                        .foregroundStyle(.secondary)
-                }
-
-                LabeledContent("Status") {
-                    Text(appState.isHotkeyRunning ? "Running" : "Not running")
-                        .foregroundStyle(appState.isHotkeyRunning ? Color.secondary : Color.red)
-                }
-
-                Text(appState.hotkeyStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button("Restart Hotkey") {
-                    appState.restartHotkey()
-                }
-
-                Text("The hotkey listener requires Accessibility permission.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            statusSection
+            permissionsSection
+            modelsSection
+            transcriptionSection
+            pasteSection
+            hotkeySection
         }
         .formStyle(.grouped)
         .padding()
-        .frame(width: 420)
+        .frame(minWidth: 640, idealWidth: 640, minHeight: 560)
+    }
+
+    private var statusSection: some View {
+        Section("Status") {
+            LabeledContent("Application") {
+                Text(appState.menuStatusText)
+                    .foregroundStyle(appState.isReadyForUse ? Color.green : Color.orange)
+            }
+
+            if let message = appState.lastErrorMessage {
+                Text(message)
+                    .foregroundStyle(.red)
+
+                Button("Clear Error") {
+                    appState.clearError()
+                }
+            }
+        }
+    }
+
+    private var permissionsSection: some View {
+        Section("Permissions") {
+            LabeledContent("Microphone") {
+                permissionText(appState.microphonePermission.rawValue, granted: appState.microphonePermission.isGranted)
+            }
+
+            LabeledContent("Accessibility") {
+                permissionText(appState.hasAccessibilityPermission ? "Granted" : "Missing", granted: appState.hasAccessibilityPermission)
+            }
+
+            HStack {
+                Button {
+                    appState.requestMicrophonePermission()
+                } label: {
+                    Label("Grant Microphone", systemImage: "mic")
+                }
+                .disabled(appState.microphonePermission.isGranted)
+
+                Button {
+                    appState.requestAccessibilityPermission()
+                } label: {
+                    Label("Open Accessibility", systemImage: "accessibility")
+                }
+                .disabled(appState.hasAccessibilityPermission)
+
+                Button {
+                    appState.refreshPermissions()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+            }
+        }
+    }
+
+    private var modelsSection: some View {
+        Section("Models") {
+            Picker("Use profile", selection: $appState.settings.profile) {
+                ForEach(TranscriptionProfile.allCases) { profile in
+                    Text(profile.rawValue).tag(profile)
+                }
+            }
+            .onChange(of: appState.settings.profile) {
+                appState.prewarmCurrentModel()
+            }
+
+            Text(appState.settings.profile.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            LabeledContent("Current model") {
+                Text(appState.settings.profile.model.rawValue)
+                    .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("Model status") {
+                Text(appState.modelWarmupMessage)
+                    .foregroundStyle(appState.isModelWarmingUp ? Color.orange : Color.secondary)
+            }
+
+            ForEach(TranscriptionModel.availableModels) { model in
+                modelRow(for: model)
+            }
+        }
+    }
+
+    private var transcriptionSection: some View {
+        Section("Transcription") {
+            Picker("Language", selection: $appState.settings.language) {
+                ForEach(TranscriptionLanguage.allCases) { language in
+                    Text(language.rawValue).tag(language)
+                }
+            }
+        }
+    }
+
+    private var pasteSection: some View {
+        Section("Paste") {
+            Toggle("Auto paste", isOn: $appState.settings.autoPaste)
+            Toggle("Restore clipboard after paste", isOn: $appState.settings.restoreClipboard)
+        }
+    }
+
+    private var hotkeySection: some View {
+        Section("Hotkey") {
+            LabeledContent("Key") {
+                Text("Fn")
+                    .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("Listener") {
+                permissionText(appState.isHotkeyRunning ? "Running" : "Not running", granted: appState.isHotkeyRunning)
+            }
+
+            Text(appState.hotkeyStatusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Button {
+                appState.restartHotkey()
+            } label: {
+                Label("Restart Hotkey", systemImage: "keyboard")
+            }
+        }
+    }
+
+    private func modelRow(for model: TranscriptionModel) -> some View {
+        let state = appState.modelStorageStates[model] ?? .notDownloaded
+        let isCurrent = appState.settings.profile.model == model
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.rawValue)
+                        .font(.headline)
+
+                    Text(model.whisperKitIdentifier)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text(isCurrent ? "Selected" : state.label)
+                    .font(.caption)
+                    .foregroundStyle(color(for: state, isCurrent: isCurrent))
+            }
+
+            HStack {
+                Button {
+                    appState.download(model)
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
+                .disabled(state == .downloaded || state == .downloading || state == .deleting)
+
+                Button(role: .destructive) {
+                    appState.delete(model)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .disabled(state != .downloaded || state == .deleting)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func permissionText(_ text: String, granted: Bool) -> some View {
+        Text(text)
+            .foregroundStyle(granted ? Color.green : Color.red)
+    }
+
+    private func color(for state: ModelStorageState, isCurrent: Bool) -> Color {
+        if isCurrent {
+            return .accentColor
+        }
+
+        switch state {
+        case .downloaded:
+            return .green
+        case .notDownloaded:
+            return .secondary
+        case .downloading, .deleting:
+            return .orange
+        case .error:
+            return .red
+        }
     }
 }
 
