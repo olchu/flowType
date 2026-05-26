@@ -21,12 +21,7 @@ struct FloatingIndicatorView: View {
         .frame(minWidth: 54, minHeight: 20)
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
-        .background(.black.opacity(0.92), in: Capsule())
-        .overlay {
-            Capsule()
-                .stroke(.white.opacity(0.14), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.30), radius: 18, x: 0, y: 8)
+        .background(.black, in: Capsule())
     }
 }
 

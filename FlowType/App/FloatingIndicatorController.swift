@@ -13,7 +13,7 @@ final class FloatingIndicatorController {
         case .recording, .transcribing:
             show(status, audioLevel: audioLevel)
         case .ready:
-            scheduleHide()
+            hide()
         case .error:
             if panel?.isVisible == true {
                 show(status, audioLevel: audioLevel)
@@ -24,10 +24,18 @@ final class FloatingIndicatorController {
 
     private func show(_ status: AppStatus, audioLevel: Double) {
         let panel = panel ?? makePanel()
-        panel.contentView = NSHostingView(rootView: FloatingIndicatorView(status: status, audioLevel: audioLevel))
+        let hostingView = NSHostingView(rootView: FloatingIndicatorView(status: status, audioLevel: audioLevel))
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView = hostingView
         position(panel)
         panel.orderFrontRegardless()
         self.panel = panel
+    }
+
+    private func hide() {
+        hideTask?.cancel()
+        panel?.orderOut(nil)
     }
 
     private func scheduleHide() {
@@ -50,6 +58,8 @@ final class FloatingIndicatorController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         panel.hidesOnDeactivate = false
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
