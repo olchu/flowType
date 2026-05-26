@@ -67,7 +67,7 @@ struct FloatingIndicatorView: View {
                     microphoneSensitivity: model.microphoneSensitivity
                 )
             case .transcribing:
-                TranscribingLettersView()
+                TranscribingDotsView()
             case .ready:
                 EmptyView()
             case .error:
@@ -140,36 +140,35 @@ private struct RecordingBarsView: View {
     }
 }
 
-private struct TranscribingLettersView: View {
-    private let letters = Array("ABC")
+private struct TranscribingDotsView: View {
+    private let dots = Array(0..<3)
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 24)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
 
             HStack(spacing: 5) {
-                ForEach(Array(letters.enumerated()), id: \.offset) { index, letter in
-                    Text(String(letter))
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                ForEach(dots, id: \.self) { index in
+                    Circle()
+                        .frame(width: size(for: index, time: time), height: size(for: index, time: time))
                         .opacity(opacity(for: index, time: time))
-                        .offset(y: offset(for: index, time: time))
                 }
             }
             .frame(width: 30, height: 10)
         }
     }
 
-    private func opacity(for index: Int, time: TimeInterval) -> Double {
-        let stepDuration = 0.42
-        let cyclePosition = time.truncatingRemainder(dividingBy: stepDuration * Double(letters.count)) / stepDuration
-        let distance = abs(cyclePosition - Double(index))
-        guard distance < 1 else { return 0 }
-
-        return max(0, 1 - distance * 1.35)
+    private func size(for index: Int, time: TimeInterval) -> CGFloat {
+        3 + CGFloat(pulse(for: index, time: time)) * 2
     }
 
-    private func offset(for index: Int, time: TimeInterval) -> CGFloat {
-        1 - CGFloat(opacity(for: index, time: time)) * 2
+    private func opacity(for index: Int, time: TimeInterval) -> Double {
+        0.35 + pulse(for: index, time: time) * 0.65
+    }
+
+    private func pulse(for index: Int, time: TimeInterval) -> Double {
+        let phase = time * 5.2 - Double(index) * 0.58
+        return (sin(phase) + 1) / 2
     }
 }
 

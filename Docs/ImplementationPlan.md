@@ -10,7 +10,7 @@
 - Реализован global hold-to-record hotkey `Fn` через `CGEvent` event tap.
 - Менюбар очищен: в нем остались короткий статус, усредненный CPU/memory usage текущего процесса, кнопка настроек и выход.
 - Добавлены собственные иконки: `AppIcon` для приложения и template `statusbar` для status bar item.
-- Добавлен floating indicator: во время записи показывает компактные audio bars от реального уровня микрофона, во время распознавания - анимацию `A B C`, затем скрывается.
+- Добавлен floating indicator: во время записи показывает компактные audio bars от реального уровня микрофона, во время распознавания - пульсирующие точки, затем скрывается.
 - Floating indicator появляется с intro-анимацией: черная точка раскрывается в капсулу, затем появляется содержимое.
 - Settings содержит permissions, hotkey status, transcription settings, indicator sensitivity, paste settings и управление локальными моделями.
 - Paste fallback: при детектируемом сбое автоматической вставки распознанный текст остается в clipboard, а Settings показывает понятную ошибку.
