@@ -10,6 +10,24 @@ struct MenuBarView: View {
             Label(appState.menuStatusText, systemImage: appState.status.systemImageName)
                 .font(.headline)
 
+            if appState.isModelWarmingUp {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(appState.modelWarmupMessage)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                        Spacer()
+                        Text("\(Int(appState.modelLoadingProgress * 100))%")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    ProgressView(value: appState.modelLoadingProgress)
+                        .tint(.orange)
+                }
+                .padding(.top, 2)
+            }
+
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {

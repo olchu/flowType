@@ -23,6 +23,7 @@ final class AppState: ObservableObject {
     @Published private(set) var microphonePermission: PermissionStatus = .unknown
     @Published private(set) var isModelWarmingUp = false
     @Published private(set) var modelWarmupMessage = "Model is not loaded yet."
+    @Published private(set) var modelLoadingProgress: Double = 0
     @Published private(set) var modelStorageStates: [TranscriptionModel: ModelStorageState] = [:]
     @Published private(set) var audioLevel: Double = 0
     @Published private(set) var resourceUsage = ProcessResourceUsage()
@@ -176,11 +177,18 @@ final class AppState: ObservableObject {
         }
 
         isModelWarmingUp = true
+        modelLoadingProgress = 0
         modelWarmupMessage = "Loading \(settings.profile.rawValue) (\(model.rawValue))..."
 
         Task {
             do {
-                try await transcriptionService.prewarm(model: model)
+                try await transcriptionService.prewarm(model: model) { [weak self] progress, label in
+                    Task { @MainActor [weak self] in
+                        self?.modelLoadingProgress = progress
+                        self?.modelWarmupMessage = label
+                    }
+                }
+                modelLoadingProgress = 1
                 modelWarmupMessage = "\(model.rawValue) is ready."
                 refreshModelStorageStates()
             } catch {

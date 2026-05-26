@@ -105,8 +105,23 @@ struct SettingsView: View {
             }
 
             LabeledContent("Model status") {
-                Text(appState.modelWarmupMessage)
-                    .foregroundStyle(appState.isModelWarmingUp ? Color.orange : Color.secondary)
+                if appState.isModelWarmingUp {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(appState.modelWarmupMessage)
+                                .foregroundStyle(.orange)
+                            Text("\(Int(appState.modelLoadingProgress * 100))%")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        ProgressView(value: appState.modelLoadingProgress)
+                            .frame(width: 180)
+                            .tint(.orange)
+                    }
+                } else {
+                    Text(appState.modelWarmupMessage)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             ForEach(TranscriptionModel.availableModels) { model in
