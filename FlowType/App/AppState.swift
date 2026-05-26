@@ -115,11 +115,16 @@ final class AppState: ObservableObject {
                 lastTranscript = transcript
 
                 if settings.autoPaste {
-                    try await pasteService.pasteText(
-                        transcript,
-                        restoreClipboard: settings.restoreClipboard,
-                        into: dictationTargetApplication
-                    )
+                    do {
+                        try await pasteService.pasteText(
+                            transcript,
+                            restoreClipboard: settings.restoreClipboard,
+                            into: dictationTargetApplication
+                        )
+                    } catch {
+                        showPasteFallback(error)
+                        return
+                    }
                 }
 
                 status = .ready
@@ -256,6 +261,11 @@ final class AppState: ObservableObject {
     }
 
     private func showError(_ error: Error) {
+        lastErrorMessage = error.localizedDescription
+        status = .error
+    }
+
+    private func showPasteFallback(_ error: Error) {
         lastErrorMessage = error.localizedDescription
         status = .error
     }

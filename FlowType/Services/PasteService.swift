@@ -4,12 +4,15 @@ import Foundation
 @MainActor
 final class PasteService {
     enum PasteError: LocalizedError {
+        case accessibilityPermissionMissing
         case eventCreationFailed
 
         var errorDescription: String? {
             switch self {
+            case .accessibilityPermissionMissing:
+                "Automatic paste needs Accessibility permission. The transcript was copied to the clipboard."
             case .eventCreationFailed:
-                "Could not create paste keyboard events."
+                "Could not create paste keyboard events. The transcript was copied to the clipboard."
             }
         }
     }
@@ -25,6 +28,10 @@ final class PasteService {
 
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+
+        guard AXIsProcessTrusted() else {
+            throw PasteError.accessibilityPermissionMissing
+        }
 
         await activate(targetApplication)
         try sendPasteCommand()
