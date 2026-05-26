@@ -6,7 +6,6 @@ final class AudioRecorderService {
     enum AudioRecorderError: LocalizedError {
         case noInputDevice
         case alreadyRecording
-        case wavBufferCreationFailed
 
         var errorDescription: String? {
             switch self {
@@ -14,8 +13,6 @@ final class AudioRecorderService {
                 "No microphone input device is available."
             case .alreadyRecording:
                 "Recording is already in progress."
-            case .wavBufferCreationFailed:
-                "Could not prepare recorded audio for transcription."
             }
         }
     }
@@ -57,7 +54,7 @@ final class AudioRecorderService {
 
     func stopRecording() -> RecordedAudio {
         guard isRecording else {
-            return RecordedAudio(samples: [], sampleRate: sampleRate, temporaryFileURL: nil)
+            return RecordedAudio(samples: [], sampleRate: sampleRate)
         }
 
         engine?.inputNode.removeTap(onBus: 0)
@@ -68,8 +65,7 @@ final class AudioRecorderService {
 
         return RecordedAudio(
             samples: samples,
-            sampleRate: sampleRate,
-            temporaryFileURL: try? writeTemporaryWAV(samples: samples, sampleRate: sampleRate)
+            sampleRate: sampleRate
         )
     }
 
@@ -120,32 +116,4 @@ final class AudioRecorderService {
         return Double(min(1, gated / usableRange))
     }
 
-    private func writeTemporaryWAV(samples: [Float], sampleRate: Double) throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("flowtype-\(UUID().uuidString)")
-            .appendingPathExtension("wav")
-
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: false
-        ), let buffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: AVAudioFrameCount(samples.count)
-        ) else {
-            throw AudioRecorderError.wavBufferCreationFailed
-        }
-
-        buffer.frameLength = AVAudioFrameCount(samples.count)
-        let channel = buffer.floatChannelData?[0]
-
-        for index in samples.indices {
-            channel?[index] = samples[index]
-        }
-
-        let file = try AVAudioFile(forWriting: url, settings: format.settings)
-        try file.write(from: buffer)
-        return url
-    }
 }

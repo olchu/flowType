@@ -5,15 +5,12 @@ import WhisperKit
 final class TranscriptionService {
     enum TranscriptionError: LocalizedError {
         case emptyRecording
-        case missingAudioFile
         case emptyTranscript
 
         var errorDescription: String? {
             switch self {
             case .emptyRecording:
                 "No audio was captured."
-            case .missingAudioFile:
-                "Recorded audio could not be prepared for transcription."
             case .emptyTranscript:
                 "WhisperKit did not return any text."
             }
@@ -32,14 +29,8 @@ final class TranscriptionService {
         language: TranscriptionLanguage,
         model: TranscriptionModel
     ) async throws -> String {
-        defer { audio.removeTemporaryFile() }
-
         guard !audio.isEmpty else {
             throw TranscriptionError.emptyRecording
-        }
-
-        guard let audioURL = audio.temporaryFileURL else {
-            throw TranscriptionError.missingAudioFile
         }
 
         let pipeline = try await pipeline(for: model, shouldPrewarm: false)
@@ -47,8 +38,9 @@ final class TranscriptionService {
             language: language.whisperKitCode,
             detectLanguage: language == .auto
         )
+        let samples = audio.samples(resampledTo: Double(WhisperKit.sampleRate))
         let results = try await pipeline.transcribe(
-            audioPath: audioURL.path,
+            audioArray: samples,
             decodeOptions: options
         )
 
