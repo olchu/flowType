@@ -10,11 +10,11 @@ enum TranscriptionModel: String, CaseIterable, Identifiable {
     var whisperKitIdentifier: String {
         switch self {
         case .tiny:
-            "tiny"
+            "openai_whisper-tiny"
         case .base:
-            "base"
+            "openai_whisper-base"
         case .small:
-            "small"
+            "openai_whisper-small"
         }
     }
 }

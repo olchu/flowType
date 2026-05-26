@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 
@@ -17,6 +18,7 @@ final class AppState: ObservableObject {
     private let permissionsService = PermissionsService()
     private let transcriptionService = TranscriptionService()
     private let pasteService = PasteService()
+    private var dictationTargetApplication: NSRunningApplication?
 
     init() {
         refreshPermissions()
@@ -35,6 +37,7 @@ final class AppState: ObservableObject {
         guard canStartRecording else { return }
 
         lastErrorMessage = nil
+        dictationTargetApplication = NSWorkspace.shared.frontmostApplication
         do {
             try audioRecorder.startRecording()
             status = .recording
@@ -59,9 +62,10 @@ final class AppState: ObservableObject {
                 lastTranscript = transcript
 
                 if settings.autoPaste {
-                    try pasteService.pasteText(
+                    try await pasteService.pasteText(
                         transcript,
-                        restoreClipboard: settings.restoreClipboard
+                        restoreClipboard: settings.restoreClipboard,
+                        into: dictationTargetApplication
                     )
                 }
 
