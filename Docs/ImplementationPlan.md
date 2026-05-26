@@ -9,6 +9,7 @@
 - По умолчанию используется профиль `Balanced` с `Large v3 Turbo 632MB` (`openai_whisper-large-v3-v20240930_turbo_632MB`); доступны профили `Fast` (`Tiny`) и `Accurate` (`Large v3`).
 - Реализован global hold-to-record hotkey `Fn` через `CGEvent` event tap.
 - Менюбар очищен: в нем остались только короткий статус, кнопка настроек и выход.
+- Добавлен floating indicator: во время записи показывает `Listening...`, во время распознавания - `Transcribing...`, затем скрывается.
 - Settings содержит permissions, hotkey status, transcription settings, paste settings и управление локальными моделями.
 - Модели можно скачивать и реально удалять с диска из `~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/<model-id>`.
 - Модель прогревается заранее; запись блокируется, если выбранная модель еще не скачана или прогревается.
@@ -23,7 +24,7 @@
 - [x] Этап 4: Запись аудио
 - [x] Этап 5: Локальная транскрибация
 - [x] Этап 6: Вставка текста
-- [ ] Этап 7: Floating indicator
+- [x] Этап 7: Floating indicator
 - [x] Этап 8: Settings
 - [ ] Этап 9: Стабилизация
 
@@ -205,7 +206,7 @@ MenuBarExtra
 → paste into active app
 ```
 
-Дополнительно уже реализовано отдельное окно Settings с permissions и управлением моделями. Следующий шаг - сохранить настройки между перезапусками, затем добавить floating indicator.
+Дополнительно уже реализованы отдельное окно Settings с permissions и управлением моделями, сохранение настроек между перезапусками и floating indicator для записи/транскрибации.
 
 ## Открытые вопросы
 

@@ -4,7 +4,11 @@ import Foundation
 
 @MainActor
 final class AppState: ObservableObject {
-    @Published var status: AppStatus = .ready
+    @Published var status: AppStatus = .ready {
+        didSet {
+            floatingIndicatorController.update(for: status)
+        }
+    }
     @Published var settings = AppSettings() {
         didSet {
             settingsStorageService.save(settings)
@@ -27,6 +31,7 @@ final class AppState: ObservableObject {
     private let pasteService = PasteService()
     private let modelStorageService = ModelStorageService()
     private let settingsStorageService = SettingsStorageService()
+    private let floatingIndicatorController = FloatingIndicatorController()
     private var dictationTargetApplication: NSRunningApplication?
 
     init() {
