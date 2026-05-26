@@ -4,19 +4,32 @@ struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        Form {
-            statusSection
-            permissionsSection
-            modelsSection
-            transcriptionSection
-            indicatorSection
-            pasteSection
-            hotkeySection
-            resetSection
+        ZStack(alignment: .bottomTrailing) {
+            Form {
+                statusSection
+                permissionsSection
+                modelsSection
+                transcriptionSection
+                indicatorSection
+                pasteSection
+                hotkeySection
+                resetSection
+            }
+            .formStyle(.grouped)
+
+            Text(appVersionText)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.trailing, 18)
+                .padding(.bottom, 10)
         }
-        .formStyle(.grouped)
         .padding()
         .frame(minWidth: 640, idealWidth: 640, minHeight: 560)
+    }
+
+    private var appVersionText: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        return "v\(version ?? "0.8")"
     }
 
     private var statusSection: some View {
