@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import os
 
 @MainActor
 final class AppState: ObservableObject {
@@ -41,17 +42,20 @@ final class AppState: ObservableObject {
     private let resourceMonitorService = ProcessResourceMonitorService()
     private let loginItemService = LoginItemService()
     private let floatingIndicatorController = FloatingIndicatorController()
+    private let finalTailTranscriptionSeconds: TimeInterval = 3
+    private let minimumFinalTailRecordingDuration: TimeInterval = 0.9
     private lazy var onboardingWindowController = OnboardingWindowController(appState: self)
     private var dictationTargetApplication: NSRunningApplication?
     private var resourceUsageTask: Task<Void, Never>?
+    private var streamingTranscriptionTask: Task<Void, Never>?
+    private var smoothedAudioLevel: Double = 0
 
     init() {
         settings = settingsStorageService.load()
         hasCompletedOnboarding = settingsStorageService.hasCompletedOnboarding()
         audioRecorder.onLevelChanged = { [weak self] level in
             guard let self else { return }
-            audioLevel = level
-            updateFloatingIndicator()
+            updateAudioLevel(level)
         }
 
         refreshPermissions()
@@ -68,6 +72,7 @@ final class AppState: ObservableObject {
 
     deinit {
         resourceUsageTask?.cancel()
+        streamingTranscriptionTask?.cancel()
     }
 
     var isReadyForUse: Bool {
@@ -113,13 +118,38 @@ final class AppState: ObservableObject {
         guard canStartRecording else { return }
 
         lastErrorMessage = nil
+        lastTranscript = ""
         audioLevel = 0
-        dictationTargetApplication = NSWorkspace.shared.frontmostApplication
+        smoothedAudioLevel = 0
+
+        let timing = DictationTiming()
+        timing.mark("start requested")
+
         do {
             try audioRecorder.startRecording()
-            status = .recording
+            timing.mark("audio recording started")
         } catch {
             showError(error)
+            return
+        }
+
+        dictationTargetApplication = NSWorkspace.shared.frontmostApplication
+        status = .recording
+
+        streamingTranscriptionTask?.cancel()
+        streamingTranscriptionTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await transcriptionService.startStreamingTranscription(
+                    language: settings.language,
+                    model: settings.profile.model
+                ) { [weak self] transcript in
+                    self?.lastTranscript = transcript
+                }
+            } catch {
+                _ = audioRecorder.stopRecording()
+                showError(error)
+            }
         }
     }
 
@@ -127,43 +157,223 @@ final class AppState: ObservableObject {
         guard canStopRecording else { return }
 
         audioLevel = 0
-        let audio = audioRecorder.stopRecording()
-
-        guard audio.containsLikelySpeech else {
-            lastTranscript = ""
-            status = .ready
-            return
-        }
-
+        smoothedAudioLevel = 0
         status = .transcribing
 
         Task {
-            do {
+            let timing = DictationTiming()
+            timing.mark("finish requested")
+            let recordedAudio = audioRecorder.stopRecording()
+            timing.mark("audio stopped duration=\(Self.formattedSeconds(recordedAudio.duration))s samples=\(recordedAudio.samples.count)")
+
+            let streamingResult = await transcriptionService.stopStreamingTranscription()
+            timing.mark(
+                "stream stopped textChars=\(streamingResult.transcript.count) covered=\(Self.formattedSeconds(streamingResult.coveredDuration))s"
+            )
+
+            streamingTranscriptionTask?.cancel()
+            streamingTranscriptionTask = nil
+
+            let transcript = await finalTranscript(
+                from: recordedAudio,
+                streamingResult: streamingResult,
+                timing: timing
+            )
+            timing.mark("final transcript ready chars=\(transcript.count)")
+
+            guard !transcript.isEmpty else {
+                lastTranscript = ""
+                status = .ready
+                timing.finish("empty transcript")
+                return
+            }
+
+            lastTranscript = transcript
+
+            if settings.autoPaste {
+                do {
+                    try await pasteService.pasteText(
+                        transcript,
+                        restoreClipboard: settings.restoreClipboard,
+                        into: dictationTargetApplication
+                    )
+                    timing.mark("paste completed")
+                } catch {
+                    showPasteFallback(error)
+                    timing.finish("paste failed")
+                    return
+                }
+            }
+
+            status = .ready
+            timing.finish("ready")
+        }
+    }
+
+    private func finalTranscript(
+        from recordedAudio: RecordedAudio,
+        streamingResult: TranscriptionService.StreamingTranscriptionResult,
+        timing: DictationTiming? = nil
+    ) async -> String {
+        let streamingTranscript = streamingResult.transcript
+
+        guard recordedAudio.containsLikelySpeech else {
+            timing?.mark("speech gate skipped final decode")
+            return streamingTranscript
+        }
+
+        do {
+            timing?.mark("finalization mode=\(settings.finalizationMode.rawValue)")
+
+            guard !streamingTranscript.isEmpty else {
+                timing?.mark("full decode started reason=empty-stream")
                 let transcript = try await transcriptionService.transcribe(
-                    audio,
+                    recordedAudio,
                     language: settings.language,
                     model: settings.profile.model
                 )
-                lastTranscript = transcript
-
-                if settings.autoPaste {
-                    do {
-                        try await pasteService.pasteText(
-                            transcript,
-                            restoreClipboard: settings.restoreClipboard,
-                            into: dictationTargetApplication
-                        )
-                    } catch {
-                        showPasteFallback(error)
-                        return
-                    }
-                }
-
-                status = .ready
-            } catch {
-                showError(error)
+                timing?.mark("full decode completed chars=\(transcript.count)")
+                return transcript
             }
+
+            switch settings.finalizationMode {
+            case .fullRecording:
+                timing?.mark("full decode started reason=baseline-mode")
+                let transcript = try await transcriptionService.transcribe(
+                    recordedAudio,
+                    language: settings.language,
+                    model: settings.profile.model
+                )
+                timing?.mark("full decode completed chars=\(transcript.count)")
+                return transcript
+
+            case .streamOnly:
+                timing?.mark("final decode skipped reason=stream-only")
+                return streamingTranscript
+
+            case .streamTail:
+                break
+            }
+
+            guard shouldVerifyFinalTail(
+                recordedAudio: recordedAudio,
+                streamingResult: streamingResult
+            ) else {
+                timing?.mark("tail decode skipped")
+                return streamingTranscript
+            }
+
+            timing?.mark("tail decode started window=\(Self.formattedSeconds(finalTailTranscriptionSeconds))s")
+            let tailTranscript = try await transcriptionService.transcribe(
+                recordedAudio.suffix(seconds: finalTailTranscriptionSeconds),
+                language: settings.language,
+                model: settings.profile.model
+            )
+            timing?.mark("tail decode completed chars=\(tailTranscript.count)")
+            let mergedTranscript = Self.mergedTranscript(base: streamingTranscript, tail: tailTranscript)
+            timing?.mark("merge completed chars=\(mergedTranscript.count)")
+            return mergedTranscript
+        } catch {
+            timing?.mark("final decode failed fallback=stream error=\(error.localizedDescription)")
+            return streamingTranscript
         }
+    }
+
+    private func shouldVerifyFinalTail(
+        recordedAudio: RecordedAudio,
+        streamingResult: TranscriptionService.StreamingTranscriptionResult
+    ) -> Bool {
+        guard recordedAudio.duration >= minimumFinalTailRecordingDuration else {
+            return false
+        }
+
+        if settings.verifiesFinalTail {
+            return true
+        }
+
+        // WhisperKit's streaming timestamps can say the tail is covered before
+        // the last words are actually present in the emitted text, so verify a
+        // short final window by default.
+        return !streamingResult.transcript.isEmpty
+    }
+
+    private func updateAudioLevel(_ level: Double) {
+        let clampedLevel = min(1, max(0, level))
+        let smoothing = clampedLevel > smoothedAudioLevel ? 0.42 : 0.18
+        smoothedAudioLevel += (clampedLevel - smoothedAudioLevel) * smoothing
+
+        guard abs(audioLevel - smoothedAudioLevel) >= 0.01 || smoothedAudioLevel == 0 else {
+            return
+        }
+
+        audioLevel = smoothedAudioLevel
+        updateFloatingIndicator()
+    }
+
+    nonisolated private static func mergedTranscript(base: String, tail: String) -> String {
+        let base = normalizedTranscript(base)
+        let tail = normalizedTranscript(tail)
+
+        guard !base.isEmpty else { return tail }
+        guard !tail.isEmpty else { return base }
+
+        let baseWords = base.split(separator: " ").map(String.init)
+        let tailWords = tail.split(separator: " ").map(String.init)
+        let baseComparableWords = baseWords.map(comparableWord)
+        let tailComparableWords = tailWords.map(comparableWord)
+        let maxOverlap = min(baseWords.count, tailWords.count, 24)
+
+        for overlap in stride(from: maxOverlap, through: 1, by: -1) {
+            let baseSuffix = Array(baseComparableWords.suffix(overlap))
+            let tailPrefix = Array(tailComparableWords.prefix(overlap))
+
+            guard overlaps(baseSuffix, tailPrefix) else { continue }
+
+            let newTail = tailWords.dropFirst(overlap).joined(separator: " ")
+            return newTail.isEmpty ? base : "\(base) \(newTail)"
+        }
+
+        return "\(base) \(tail)"
+    }
+
+    nonisolated private static func normalizedTranscript(_ transcript: String) -> String {
+        transcript
+            .replacing(/\s+/, with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    nonisolated private static func comparableWord(_ word: String) -> String {
+        word
+            .lowercased()
+            .trimmingCharacters(in: .punctuationCharacters.union(.symbols))
+    }
+
+    nonisolated private static func overlaps(_ lhs: [String], _ rhs: [String]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+
+        let pairs = zip(lhs, rhs).filter { !$0.0.isEmpty && !$0.1.isEmpty }
+        guard !pairs.isEmpty else { return false }
+
+        let exactMatches = pairs.reduce(0) { count, pair in
+            count + (wordsMatch(pair.0, pair.1) ? 1 : 0)
+        }
+
+        switch pairs.count {
+        case 1:
+            return exactMatches == 1
+        case 2:
+            return exactMatches == 2
+        default:
+            return Double(exactMatches) / Double(pairs.count) >= 0.68
+        }
+    }
+
+    nonisolated private static func wordsMatch(_ lhs: String, _ rhs: String) -> Bool {
+        lhs == rhs || lhs.hasPrefix(rhs) || rhs.hasPrefix(lhs)
+    }
+
+    nonisolated private static func formattedSeconds(_ seconds: TimeInterval) -> String {
+        String(format: "%.3f", seconds)
     }
 
     func clearError() {
@@ -372,5 +582,41 @@ final class AppState: ObservableObject {
             audioLevel: audioLevel,
             microphoneSensitivity: settings.microphoneSensitivity
         )
+    }
+}
+
+private final class DictationTiming {
+    #if DEBUG
+    private static let logger = Logger(subsystem: "com.ochurkin.FlowType", category: "DictationTiming")
+    private let start = ContinuousClock.now
+    private var last = ContinuousClock.now
+
+    func mark(_ message: String) {
+        let now = ContinuousClock.now
+        let total = start.duration(to: now).timeInterval
+        let delta = last.duration(to: now).timeInterval
+        last = now
+
+        let line = "[FlowTypeTiming] +\(Self.format(delta))s total=\(Self.format(total))s \(message)"
+        Self.logger.debug("\(line, privacy: .public)")
+    }
+
+    func finish(_ message: String) {
+        mark("finished \(message)")
+    }
+
+    private static func format(_ seconds: TimeInterval) -> String {
+        String(format: "%.3f", seconds)
+    }
+    #else
+    func mark(_ message: String) {}
+    func finish(_ message: String) {}
+    #endif
+}
+
+private extension Duration {
+    var timeInterval: TimeInterval {
+        let components = self.components
+        return Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
     }
 }
