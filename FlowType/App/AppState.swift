@@ -6,7 +6,7 @@ import Foundation
 final class AppState: ObservableObject {
     @Published var status: AppStatus = .ready {
         didSet {
-            floatingIndicatorController.update(for: status)
+            floatingIndicatorController.update(for: status, audioLevel: audioLevel)
         }
     }
     @Published var settings = AppSettings() {
@@ -23,6 +23,7 @@ final class AppState: ObservableObject {
     @Published private(set) var isModelWarmingUp = false
     @Published private(set) var modelWarmupMessage = "Model is not loaded yet."
     @Published private(set) var modelStorageStates: [TranscriptionModel: ModelStorageState] = [:]
+    @Published private(set) var audioLevel: Double = 0
 
     private let audioRecorder = AudioRecorderService()
     private let hotkeyService = HotkeyService()
@@ -36,6 +37,11 @@ final class AppState: ObservableObject {
 
     init() {
         settings = settingsStorageService.load()
+        audioRecorder.onLevelChanged = { [weak self] level in
+            guard let self else { return }
+            audioLevel = level
+            floatingIndicatorController.update(for: status, audioLevel: level)
+        }
 
         refreshPermissions()
         refreshModelStorageStates()
@@ -82,6 +88,7 @@ final class AppState: ObservableObject {
         guard canStartRecording else { return }
 
         lastErrorMessage = nil
+        audioLevel = 0
         dictationTargetApplication = NSWorkspace.shared.frontmostApplication
         do {
             try audioRecorder.startRecording()
@@ -94,6 +101,7 @@ final class AppState: ObservableObject {
     func finishDictation() {
         guard canStopRecording else { return }
 
+        audioLevel = 0
         status = .transcribing
         let audio = audioRecorder.stopRecording()
 

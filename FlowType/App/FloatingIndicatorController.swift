@@ -6,25 +6,25 @@ final class FloatingIndicatorController {
     private var panel: NSPanel?
     private var hideTask: Task<Void, Never>?
 
-    func update(for status: AppStatus) {
+    func update(for status: AppStatus, audioLevel: Double = 0) {
         hideTask?.cancel()
 
         switch status {
         case .recording, .transcribing:
-            show(status)
+            show(status, audioLevel: audioLevel)
         case .ready:
             scheduleHide()
         case .error:
             if panel?.isVisible == true {
-                show(status)
+                show(status, audioLevel: audioLevel)
                 scheduleHide()
             }
         }
     }
 
-    private func show(_ status: AppStatus) {
+    private func show(_ status: AppStatus, audioLevel: Double) {
         let panel = panel ?? makePanel()
-        panel.contentView = NSHostingView(rootView: FloatingIndicatorView(status: status))
+        panel.contentView = NSHostingView(rootView: FloatingIndicatorView(status: status, audioLevel: audioLevel))
         position(panel)
         panel.orderFrontRegardless()
         self.panel = panel

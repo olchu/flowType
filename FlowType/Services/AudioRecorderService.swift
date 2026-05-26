@@ -24,6 +24,7 @@ final class AudioRecorderService {
     private var samples: [Float] = []
     private var sampleRate: Double = 0
     private var isRecording = false
+    var onLevelChanged: ((Double) -> Void)?
 
     func startRecording() throws {
         guard !isRecording else {
@@ -63,6 +64,7 @@ final class AudioRecorderService {
         engine?.stop()
         engine = nil
         isRecording = false
+        onLevelChanged?(0)
 
         return RecordedAudio(
             samples: samples,
@@ -84,8 +86,38 @@ final class AudioRecorderService {
                 sample += channelData[channel][frame]
             }
 
-            samples.append(sample / Float(channelCount))
+            let monoSample = sample / Float(channelCount)
+            samples.append(monoSample)
         }
+
+        onLevelChanged?(level(from: buffer))
+    }
+
+    private func level(from buffer: AVAudioPCMBuffer) -> Double {
+        guard let channelData = buffer.floatChannelData else { return 0 }
+
+        let frameCount = Int(buffer.frameLength)
+        let channelCount = Int(buffer.format.channelCount)
+        var sumSquares: Float = 0
+
+        for frame in 0..<frameCount {
+            var sample: Float = 0
+
+            for channel in 0..<channelCount {
+                sample += channelData[channel][frame]
+            }
+
+            let monoSample = sample / Float(channelCount)
+            sumSquares += monoSample * monoSample
+        }
+
+        guard frameCount > 0 else { return 0 }
+
+        let rms = sqrt(sumSquares / Float(frameCount))
+        let noiseFloor: Float = 0.018
+        let usableRange: Float = 0.16
+        let gated = max(0, rms - noiseFloor)
+        return Double(min(1, gated / usableRange))
     }
 
     private func writeTemporaryWAV(samples: [Float], sampleRate: Double) throws -> URL {
