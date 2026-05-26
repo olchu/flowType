@@ -8,6 +8,7 @@ final class AppState: ObservableObject {
     @Published var lastTranscript = ""
     @Published var lastErrorMessage: String?
     @Published private(set) var isHotkeyRunning = false
+    @Published private(set) var hotkeyStatusMessage = "Waiting for Accessibility permission."
     @Published private(set) var hasAccessibilityPermission = false
     @Published private(set) var microphonePermission: PermissionStatus = .unknown
 
@@ -84,6 +85,7 @@ final class AppState: ObservableObject {
 
     func requestAccessibilityPermission() {
         permissionsService.promptForAccessibilityPermission()
+        permissionsService.openAccessibilitySettings()
         refreshPermissions()
     }
 
@@ -102,6 +104,7 @@ final class AppState: ObservableObject {
     private func configureHotkey() {
         guard hasAccessibilityPermission else {
             isHotkeyRunning = false
+            hotkeyStatusMessage = "Waiting for Accessibility permission."
             return
         }
 
@@ -116,8 +119,12 @@ final class AppState: ObservableObject {
         do {
             try hotkeyService.start()
             isHotkeyRunning = hotkeyService.isRunning
+            hotkeyStatusMessage = hotkeyService.isRunning
+                ? "Running"
+                : "Could not start the global hotkey listener."
         } catch {
             isHotkeyRunning = false
+            hotkeyStatusMessage = error.localizedDescription
             lastErrorMessage = error.localizedDescription
             status = .error
         }

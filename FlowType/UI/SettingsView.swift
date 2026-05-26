@@ -22,7 +22,7 @@ struct SettingsView: View {
                     }
                     .disabled(appState.microphonePermission.isGranted)
 
-                    Button("Grant Accessibility") {
+                    Button("Open Accessibility Settings") {
                         appState.requestAccessibilityPermission()
                     }
                     .disabled(appState.hasAccessibilityPermission)
@@ -62,6 +62,10 @@ struct SettingsView: View {
                     Text(appState.isHotkeyRunning ? "Running" : "Not running")
                         .foregroundStyle(appState.isHotkeyRunning ? Color.secondary : Color.red)
                 }
+
+                Text(appState.hotkeyStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Button("Restart Hotkey") {
                     appState.restartHotkey()

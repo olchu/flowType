@@ -11,7 +11,7 @@ struct MenuBarView: View {
             Divider()
 
             if !appState.hasAccessibilityPermission {
-                Button("Grant Accessibility Permission") {
+                Button("Open Accessibility Settings") {
                     appState.requestAccessibilityPermission()
                 }
             }
@@ -84,6 +84,12 @@ struct MenuBarView: View {
             Text("Hotkey: \(appState.isHotkeyRunning ? "Fn" : "Not running")")
                 .font(.caption)
                 .foregroundStyle(appState.isHotkeyRunning ? Color.secondary : Color.red)
+
+            if !appState.isHotkeyRunning {
+                Text(appState.hotkeyStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             if let message = appState.lastErrorMessage {
                 Text(message)
