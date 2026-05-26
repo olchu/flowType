@@ -161,6 +161,22 @@ struct SettingsView: View {
                     Text(language.rawValue).tag(language)
                 }
             }
+
+            Picker("Finalization mode", selection: $appState.settings.finalizationMode) {
+                ForEach(TranscriptionFinalizationMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+
+            Text(appState.settings.finalizationMode.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle("Verify final tail on short recordings", isOn: $appState.settings.verifiesFinalTail)
+
+            Text("Use Full recording as the baseline when comparing timing logs.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

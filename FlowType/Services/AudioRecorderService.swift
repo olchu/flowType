@@ -40,8 +40,30 @@ final class AudioRecorderService {
         sampleRate = format.sampleRate
 
         inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
+            guard let channelData = buffer.floatChannelData else { return }
+
+            let frameCount = Int(buffer.frameLength)
+            let channelCount = Int(buffer.format.channelCount)
+            var monoSamples: [Float] = []
+            monoSamples.reserveCapacity(frameCount)
+            var sumSquares: Float = 0
+
+            for frame in 0..<frameCount {
+                var sample: Float = 0
+
+                for channel in 0..<channelCount {
+                    sample += channelData[channel][frame]
+                }
+
+                let monoSample = sample / Float(channelCount)
+                monoSamples.append(monoSample)
+                sumSquares += monoSample * monoSample
+            }
+
+            let level = Self.level(sumSquares: sumSquares, frameCount: frameCount)
+
             Task { @MainActor in
-                self?.appendSamples(from: buffer)
+                self?.appendSamples(monoSamples, level: level)
             }
         }
 
@@ -69,44 +91,12 @@ final class AudioRecorderService {
         )
     }
 
-    private func appendSamples(from buffer: AVAudioPCMBuffer) {
-        guard let channelData = buffer.floatChannelData else { return }
-
-        let frameCount = Int(buffer.frameLength)
-        let channelCount = Int(buffer.format.channelCount)
-
-        for frame in 0..<frameCount {
-            var sample: Float = 0
-
-            for channel in 0..<channelCount {
-                sample += channelData[channel][frame]
-            }
-
-            let monoSample = sample / Float(channelCount)
-            samples.append(monoSample)
-        }
-
-        onLevelChanged?(level(from: buffer))
+    private func appendSamples(_ newSamples: [Float], level: Double) {
+        samples.append(contentsOf: newSamples)
+        onLevelChanged?(level)
     }
 
-    private func level(from buffer: AVAudioPCMBuffer) -> Double {
-        guard let channelData = buffer.floatChannelData else { return 0 }
-
-        let frameCount = Int(buffer.frameLength)
-        let channelCount = Int(buffer.format.channelCount)
-        var sumSquares: Float = 0
-
-        for frame in 0..<frameCount {
-            var sample: Float = 0
-
-            for channel in 0..<channelCount {
-                sample += channelData[channel][frame]
-            }
-
-            let monoSample = sample / Float(channelCount)
-            sumSquares += monoSample * monoSample
-        }
-
+    nonisolated private static func level(sumSquares: Float, frameCount: Int) -> Double {
         guard frameCount > 0 else { return 0 }
 
         let rms = sqrt(sumSquares / Float(frameCount))
