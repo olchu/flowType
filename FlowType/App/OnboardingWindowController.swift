@@ -27,7 +27,7 @@ final class OnboardingWindowController {
             defer: false
         )
 
-        window.title = "Welcome to FlowType"
+        window.title = "Welcome to Flow Type"
         window.contentView = hostingView
         window.isReleasedWhenClosed = false
         window.center()

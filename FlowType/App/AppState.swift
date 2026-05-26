@@ -28,6 +28,8 @@ final class AppState: ObservableObject {
     @Published private(set) var audioLevel: Double = 0
     @Published private(set) var resourceUsage = ProcessResourceUsage()
     @Published private(set) var hasCompletedOnboarding = false
+    @Published private(set) var isLaunchAtLoginEnabled = false
+    @Published private(set) var launchAtLoginStatusMessage = "Disabled"
 
     private let audioRecorder = AudioRecorderService()
     private let hotkeyService = HotkeyService()
@@ -37,6 +39,7 @@ final class AppState: ObservableObject {
     private let modelStorageService = ModelStorageService()
     private let settingsStorageService = SettingsStorageService()
     private let resourceMonitorService = ProcessResourceMonitorService()
+    private let loginItemService = LoginItemService()
     private let floatingIndicatorController = FloatingIndicatorController()
     private lazy var onboardingWindowController = OnboardingWindowController(appState: self)
     private var dictationTargetApplication: NSRunningApplication?
@@ -52,6 +55,7 @@ final class AppState: ObservableObject {
         }
 
         refreshPermissions()
+        refreshLaunchAtLoginStatus()
         refreshModelStorageStates()
         configureHotkey()
         prewarmCurrentModel()
@@ -278,6 +282,22 @@ final class AppState: ObservableObject {
 
     func refreshResourceUsage() {
         resourceUsage = resourceMonitorService.currentUsage()
+    }
+
+    func refreshLaunchAtLoginStatus() {
+        isLaunchAtLoginEnabled = loginItemService.isEnabled
+        launchAtLoginStatusMessage = loginItemService.statusDescription
+    }
+
+    func setLaunchAtLoginEnabled(_ isEnabled: Bool) {
+        do {
+            try loginItemService.setEnabled(isEnabled)
+            refreshLaunchAtLoginStatus()
+        } catch {
+            refreshLaunchAtLoginStatus()
+            lastErrorMessage = error.localizedDescription
+            status = .error
+        }
     }
 
     func resetSettingsToDefaults() {

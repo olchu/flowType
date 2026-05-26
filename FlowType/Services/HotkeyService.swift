@@ -9,7 +9,7 @@ final class HotkeyService {
         var errorDescription: String? {
             switch self {
             case .eventTapCreationFailed:
-                "Could not start the global hotkey listener. Grant Accessibility permission and restart FlowType."
+                "Could not start the global hotkey listener. Grant Accessibility permission and restart Flow Type."
             }
         }
     }

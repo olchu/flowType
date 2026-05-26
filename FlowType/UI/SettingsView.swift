@@ -7,6 +7,7 @@ struct SettingsView: View {
         ZStack(alignment: .bottomTrailing) {
             Form {
                 statusSection
+                applicationSection
                 permissionsSection
                 modelsSection
                 transcriptionSection
@@ -80,6 +81,29 @@ struct SettingsView: View {
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
+            }
+        }
+    }
+
+    private var applicationSection: some View {
+        Section("Application") {
+            Toggle(
+                "Open at login",
+                isOn: Binding(
+                    get: { appState.isLaunchAtLoginEnabled },
+                    set: { appState.setLaunchAtLoginEnabled($0) }
+                )
+            )
+
+            LabeledContent("Login item") {
+                Text(appState.launchAtLoginStatusMessage)
+                    .foregroundStyle(appState.isLaunchAtLoginEnabled ? Color.green : Color.secondary)
+            }
+
+            Button {
+                appState.refreshLaunchAtLoginStatus()
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
             }
         }
     }

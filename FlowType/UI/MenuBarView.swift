@@ -49,7 +49,7 @@ struct MenuBarView: View {
             Button {
                 NSApplication.shared.terminate(nil)
             } label: {
-                Label("Quit FlowType", systemImage: "power")
+                Label("Quit Flow Type", systemImage: "power")
             }
             .keyboardShortcut("q")
         }

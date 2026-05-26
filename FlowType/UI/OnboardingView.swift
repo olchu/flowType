@@ -15,10 +15,10 @@ struct OnboardingView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("FlowType")
+            Text("Flow Type")
                 .font(.largeTitle.bold())
 
-            Text("Before dictation can work, FlowType needs a local WhisperKit model. The model runs on this Mac, so your audio stays local.")
+            Text("Before dictation can work, Flow Type needs a local WhisperKit model. The model runs on this Mac, so your audio stays local.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

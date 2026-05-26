@@ -17,11 +17,11 @@ struct FlowTypeApp: App {
                 .environmentObject(appState)
         } label: {
             Image("statusbar")
-                .accessibilityLabel("FlowType")
+                .accessibilityLabel("Flow Type")
         }
         .menuBarExtraStyle(.menu)
 
-        Window("FlowType Settings", id: "settings") {
+        Window("Flow Type Settings", id: "settings") {
             SettingsView()
                 .environmentObject(appState)
         }
