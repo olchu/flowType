@@ -1,6 +1,6 @@
 import Foundation
 
-struct AppSettings {
+struct AppSettings: Codable, Equatable {
     var profile: TranscriptionProfile = .balanced
     var language: TranscriptionLanguage = .auto
     var autoPaste = true

@@ -5,7 +5,11 @@ import Foundation
 @MainActor
 final class AppState: ObservableObject {
     @Published var status: AppStatus = .ready
-    @Published var settings = AppSettings()
+    @Published var settings = AppSettings() {
+        didSet {
+            settingsStorageService.save(settings)
+        }
+    }
     @Published var lastTranscript = ""
     @Published var lastErrorMessage: String?
     @Published private(set) var isHotkeyRunning = false
@@ -22,9 +26,12 @@ final class AppState: ObservableObject {
     private let transcriptionService = TranscriptionService()
     private let pasteService = PasteService()
     private let modelStorageService = ModelStorageService()
+    private let settingsStorageService = SettingsStorageService()
     private var dictationTargetApplication: NSRunningApplication?
 
     init() {
+        settings = settingsStorageService.load()
+
         refreshPermissions()
         refreshModelStorageStates()
         configureHotkey()

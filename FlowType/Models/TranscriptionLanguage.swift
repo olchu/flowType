@@ -1,6 +1,6 @@
 import Foundation
 
-enum TranscriptionLanguage: String, CaseIterable, Identifiable {
+enum TranscriptionLanguage: String, CaseIterable, Codable, Identifiable {
     case auto = "Auto"
     case russian = "Russian"
     case english = "English"

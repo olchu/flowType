@@ -1,6 +1,6 @@
 import Foundation
 
-enum TranscriptionProfile: String, CaseIterable, Identifiable {
+enum TranscriptionProfile: String, CaseIterable, Codable, Identifiable {
     case fast = "Fast"
     case balanced = "Balanced"
     case accurate = "Accurate"

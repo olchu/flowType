@@ -4,11 +4,14 @@
 
 - Проект уже переведен на SwiftUI `MenuBarExtra`.
 - Приложение запускается как menu bar app без основного окна.
-- Добавлены `AppState`, базовые модели, services skeleton и settings window.
-- Реализован ручной Start/Stop flow для записи, WhisperKit transcription и paste flow.
+- Добавлены `AppState`, модели, сервисы и отдельное окно `FlowType Settings`.
+- Реализован hold-to-record flow: `Fn` запускает запись, отпускание останавливает запись, запускает WhisperKit transcription и вставляет текст в активное приложение.
 - По умолчанию используется профиль `Balanced` с `Large v3 Turbo 632MB` (`openai_whisper-large-v3-v20240930_turbo_632MB`); доступны профили `Fast` (`Tiny`) и `Accurate` (`Large v3`).
 - Реализован global hold-to-record hotkey `Fn` через `CGEvent` event tap.
-- Добавлен permissions UI для Microphone и Accessibility в menu bar и settings.
+- Менюбар очищен: в нем остались только короткий статус, кнопка настроек и выход.
+- Settings содержит permissions, hotkey status, transcription settings, paste settings и управление локальными моделями.
+- Модели можно скачивать и реально удалять с диска из `~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/<model-id>`.
+- Модель прогревается заранее; запись блокируется, если выбранная модель еще не скачана или прогревается.
 - Целевой продукт: macOS 14+ menu bar app для локальной голосовой диктовки.
 - Рекомендуемая архитектура для MVP: SwiftUI MV с небольшим observable-состоянием приложения и отдельными сервисами для side effects.
 
@@ -19,12 +22,14 @@
 - [x] Этап 3: Hotkey
 - [x] Этап 4: Запись аудио
 - [x] Этап 5: Локальная транскрибация
-- [ ] Этап 6: Вставка текста
+- [x] Этап 6: Вставка текста
 - [ ] Этап 7: Floating indicator
-- [ ] Этап 8: Settings
+- [x] Этап 8: Settings
 - [ ] Этап 9: Стабилизация
 
-Примечание: этап 6 частично реализован для первого вертикального среза, но еще требует проверки на реальном paste сценарии. Этапы 4 и 5 используют временный WAV-файл как bridge к `WhisperKit.transcribe(audioPath:)`; файл удаляется после транскрибации.
+Примечание: этапы 4 и 5 пока используют временный WAV-файл как bridge к `WhisperKit.transcribe(audioPath:)`; файл удаляется после транскрибации. Это работает, но следующим техническим улучшением можно убрать временный файл и передавать аудио в WhisperKit из памяти.
+
+Примечание: настройки профиля, языка и paste behavior сохраняются в `UserDefaults`.
 
 ## Целевая структура MVP
 
@@ -43,11 +48,14 @@ FlowType/
     TranscriptionService.swift
     PasteService.swift
     PermissionsService.swift
+    ModelStorageService.swift
   Models/
     AppStatus.swift
     AppSettings.swift
+    ModelStorageState.swift
     TranscriptionLanguage.swift
     TranscriptionModel.swift
+    TranscriptionProfile.swift
   Utils/
     ClipboardSnapshot.swift
     Logger.swift
@@ -56,10 +64,11 @@ FlowType/
 ## Основные решения
 
 - Использовать `MenuBarExtra` как главный scene и убрать обычное окно из стартового сценария.
-- Держать единый `AppState` для статуса, выбранной модели, языка, permission-состояний и ошибок.
+- Держать единый `AppState` для статуса, выбранного профиля/модели, языка, permission-состояний, состояния локальных моделей и ошибок.
 - Side effects держать в сервисах: hotkey, запись микрофона, транскрибация, pasteboard, accessibility checks.
 - Начать с MV, без MVVM/TCA, потому что MVP пока небольшой и поток действий линейный.
 - Загружать модель WhisperKit один раз при старте приложения или при первой транскрибации и затем переиспользовать.
+- Управление моделями делать явно из Settings: пользователь видит, что скачано, может скачать нужную модель и удалить ее с диска.
 - Подключать WhisperKit как отдельный Swift Package Manager product из `https://github.com/argmaxinc/argmax-oss-swift`.
 - Для MVP запись хранится в памяти, а после `stopRecording()` дополнительно создается временный WAV-файл для `WhisperKit.transcribe(audioPath:)`. Файл удаляется сразу после транскрибации.
 
@@ -68,7 +77,7 @@ FlowType/
 1. Создать структуру папок из целевой архитектуры.
 2. Перевести `FlowTypeApp` с `WindowGroup` на `MenuBarExtra`.
 3. Добавить `AppState`, `AppStatus` и `AppSettings`.
-4. Добавить минимальное menu bar UI: статус, выбранная модель, настройки, выход.
+4. Добавить минимальное menu bar UI: статус, настройки, выход.
 5. Добавить базовую точку входа для окна настроек.
 
 Критерии готовности:
@@ -81,7 +90,7 @@ FlowType/
 1. Добавить `NSMicrophoneUsageDescription` в Info settings приложения.
 2. Реализовать проверку и запрос доступа к микрофону в `PermissionsService`.
 3. Реализовать проверку accessibility permission и переход в системные настройки.
-4. Показывать состояние permissions и ошибки в меню/настройках.
+4. Показывать состояние permissions и ошибки в настройках.
 
 Критерии готовности:
 - Приложение умеет запросить доступ к микрофону.
@@ -89,7 +98,7 @@ FlowType/
 
 ## Этап 3: Hotkey
 
-1. Добавить зависимость для глобального hotkey: начать с `KeyboardShortcuts`, а если key-up поведение окажется неудобным, перейти на `HotKey` или lower-level event tap.
+1. Использовать lower-level `CGEvent` event tap, потому что нужен hold-to-record и key-up для `Fn`.
 2. Зарегистрировать shortcut по умолчанию: `Fn`.
 3. Связать key down со `startDictation()`.
 4. Связать key up с `finishDictation()`.
@@ -122,12 +131,15 @@ FlowType/
 5. Загружать выбранную модель один раз и переиспользовать ее между сессиями диктовки.
 6. Поддержать auto language detection, а также явные `ru` и `en`.
 7. Добавить переходы статусов для загрузки модели и транскрибации.
+8. Добавить профили `Fast`, `Balanced`, `Accurate`.
+9. Добавить prewarm выбранной модели при старте и при смене профиля.
 
 Критерии готовности:
 - Записанное аудио распознается локально.
 - Повторные диктовки не перезагружают модель.
 - Ошибки видны пользователю, но не роняют приложение.
 - `argmax-oss-swift` подключен как Swift Package dependency, product `WhisperKit`.
+- Пользователь может выбрать профиль точности/скорости.
 
 ## Этап 6: Вставка текста
 
@@ -137,6 +149,7 @@ FlowType/
 4. Отправлять Cmd+V в активное приложение.
 5. Восстанавливать предыдущий clipboard, если настройка включена.
 6. Добавить fallback: если paste не удался, оставлять текст в clipboard и показывать ошибку/статус.
+7. Запоминать активное приложение при старте записи и возвращать фокус перед вставкой.
 
 Критерии готовности:
 - Текст вставляется в активное поле ввода.
@@ -155,13 +168,16 @@ FlowType/
 
 ## Этап 8: Settings
 
-1. Реализовать UI настроек для hotkey, модели, языка, auto paste и restore clipboard.
-2. Сохранять настройки через `UserDefaults` или `@AppStorage`.
-3. Переконфигурировать сервисы при изменении настроек.
-4. Добавить reset-to-defaults там, где это полезно.
+1. Реализовать UI настроек для permissions, hotkey, моделей, языка, auto paste и restore clipboard.
+2. Добавить выбор профиля модели: `Fast`, `Balanced`, `Accurate`.
+3. Добавить управление локальными моделями: status, download, delete.
+4. Сохранять настройки через `UserDefaults` или `@AppStorage`.
+5. Переконфигурировать сервисы при изменении настроек.
+6. Добавить reset-to-defaults там, где это полезно.
 
 Критерии готовности:
 - Пользователь может настроить все MVP-параметры.
+- Пользователь может скачать и удалить локальные модели.
 - Настройки переживают перезапуск приложения.
 
 ## Этап 9: Стабилизация
@@ -183,17 +199,17 @@ FlowType/
 ```text
 MenuBarExtra
 → AppState status
-→ ручные Start/Stop actions в меню
+→ Fn hold-to-record
 → AVAudioEngine recording
 → WhisperKit transcription result
 → paste into active app
 ```
 
-Дополнительно уже подключен global hotkey `Fn`. Следующий шаг - стабилизировать paste flow, затем добавить floating indicator.
+Дополнительно уже реализовано отдельное окно Settings с permissions и управлением моделями. Следующий шаг - сохранить настройки между перезапусками, затем добавить floating indicator.
 
 ## Открытые вопросы
 
-- Какую Whisper-модель выбрать по умолчанию для MVP: самую быструю или более точную?
-- Модели должны скачиваться автоматически или пользователь должен выбрать/подготовить модель заранее?
-- `Fn` должен сразу становиться активным shortcut или на первом запуске лучше попросить явное подтверждение?
-- При неудачной вставке оставить распознанный текст в clipboard, показать notification или сделать оба действия?
+- Нужно ли автоматически скачивать `Balanced` при первом запуске или оставить явную кнопку Download?
+- Нужен ли fallback-ввод через Accessibility focused text element для приложений, где `Cmd+V` не работает?
+- Нужен ли режим streaming/chunked transcription для длинных диктовок?
+- Нужно ли хранить историю последних транскриптов или это риск для приватности?
