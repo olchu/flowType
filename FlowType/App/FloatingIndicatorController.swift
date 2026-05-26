@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class FloatingIndicatorController {
     private var panel: NSPanel?
+    private let model = FloatingIndicatorModel()
     private var hideTask: Task<Void, Never>?
 
     func update(
@@ -28,16 +29,15 @@ final class FloatingIndicatorController {
 
     private func show(_ status: AppStatus, audioLevel: Double, microphoneSensitivity: Double) {
         let panel = panel ?? makePanel()
-        let hostingView = NSHostingView(
-            rootView: FloatingIndicatorView(
-                status: status,
-                audioLevel: audioLevel,
-                microphoneSensitivity: microphoneSensitivity
-            )
+        let startsNewPresentation = !panel.isVisible
+
+        model.update(
+            status: status,
+            audioLevel: audioLevel,
+            microphoneSensitivity: microphoneSensitivity,
+            startsNewPresentation: startsNewPresentation
         )
-        hostingView.wantsLayer = true
-        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
-        panel.contentView = hostingView
+
         position(panel)
         panel.orderFrontRegardless()
         self.panel = panel
@@ -60,7 +60,7 @@ final class FloatingIndicatorController {
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 72, height: 30),
+            contentRect: NSRect(x: 0, y: 0, width: 72, height: 22),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -74,13 +74,19 @@ final class FloatingIndicatorController {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.ignoresMouseEvents = true
+
+        let hostingView = NSHostingView(rootView: FloatingIndicatorView(model: model))
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView = hostingView
+
         return panel
     }
 
     private func position(_ panel: NSPanel) {
         guard let screen = NSScreen.main else { return }
 
-        let size = panel.contentView?.fittingSize ?? NSSize(width: 72, height: 30)
+        let size = panel.contentView?.fittingSize ?? NSSize(width: 72, height: 22)
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - size.width / 2
         let y = visibleFrame.minY + 32

@@ -1,15 +1,71 @@
+import Combine
 import SwiftUI
 
+@MainActor
+final class FloatingIndicatorModel: ObservableObject {
+    @Published var status: AppStatus = .ready
+    @Published var audioLevel: Double = 0
+    @Published var microphoneSensitivity: Double = 0.5
+    @Published var presentationID = 0
+
+    init(
+        status: AppStatus = .ready,
+        audioLevel: Double = 0,
+        microphoneSensitivity: Double = 0.5
+    ) {
+        self.status = status
+        self.audioLevel = audioLevel
+        self.microphoneSensitivity = microphoneSensitivity
+    }
+
+    func update(
+        status: AppStatus,
+        audioLevel: Double,
+        microphoneSensitivity: Double,
+        startsNewPresentation: Bool
+    ) {
+        self.status = status
+        self.audioLevel = audioLevel
+        self.microphoneSensitivity = microphoneSensitivity
+
+        if startsNewPresentation {
+            presentationID += 1
+        }
+    }
+}
+
 struct FloatingIndicatorView: View {
-    let status: AppStatus
-    let audioLevel: Double
-    let microphoneSensitivity: Double
+    @ObservedObject var model: FloatingIndicatorModel
+
+    @State private var isExpanded = false
+    @State private var showsContent = false
 
     var body: some View {
+        ZStack {
+            Capsule()
+                .fill(.black)
+                .frame(width: isExpanded ? 72 : 8, height: isExpanded ? 20 : 8)
+
+            content
+                .foregroundStyle(.white)
+                .opacity(showsContent ? 1 : 0)
+        }
+        .frame(width: 72, height: 22)
+        .onAppear(perform: runIntroAnimation)
+        .onChange(of: model.presentationID) {
+            runIntroAnimation()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         HStack(spacing: 12) {
-            switch status {
+            switch model.status {
             case .recording:
-                RecordingBarsView(audioLevel: audioLevel, microphoneSensitivity: microphoneSensitivity)
+                RecordingBarsView(
+                    audioLevel: model.audioLevel,
+                    microphoneSensitivity: model.microphoneSensitivity
+                )
             case .transcribing:
                 TranscribingLettersView()
             case .ready:
@@ -18,11 +74,25 @@ struct FloatingIndicatorView: View {
                 StatusTextView(text: "Error")
             }
         }
-        .foregroundStyle(.white)
-        .frame(minWidth: 54, minHeight: 20)
+        .frame(minWidth: 54, minHeight: 14)
         .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(.black, in: Capsule())
+        .padding(.vertical, 3)
+    }
+
+    private func runIntroAnimation() {
+        showsContent = false
+        isExpanded = false
+
+        withAnimation(.easeOut(duration: 0.18)) {
+            isExpanded = true
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(170))
+            withAnimation(.easeOut(duration: 0.08)) {
+                showsContent = true
+            }
+        }
     }
 }
 
@@ -43,7 +113,7 @@ private struct RecordingBarsView: View {
                         .opacity(opacity(for: index, time: time))
                 }
             }
-            .frame(width: 30, height: 16)
+            .frame(width: 30, height: 12)
         }
     }
 
@@ -57,7 +127,7 @@ private struct RecordingBarsView: View {
         let beat = abs(sin(time * speeds[index] + phases[index]))
         let flicker = abs(sin(time * speeds[index] * 0.43 + phases[index] * 1.8))
         let level = min(1, (beat * 0.72 + flicker * 0.42) * (0.35 + gatedLevel * 1.15))
-        return 4 + CGFloat(level) * 12
+        return 3 + CGFloat(level) * 9
     }
 
     private func opacity(for index: Int, time: TimeInterval) -> Double {
@@ -85,7 +155,7 @@ private struct TranscribingLettersView: View {
                         .offset(y: offset(for: index, time: time))
                 }
             }
-            .frame(width: 30, height: 12)
+            .frame(width: 30, height: 10)
         }
     }
 
@@ -110,14 +180,26 @@ private struct StatusTextView: View {
         Text(text)
             .font(.system(size: 9, weight: .semibold, design: .rounded))
             .lineLimit(1)
-            .frame(height: 12)
+            .frame(height: 10)
     }
 }
 
 #Preview {
     VStack(spacing: 20) {
-        FloatingIndicatorView(status: .recording, audioLevel: 0.8, microphoneSensitivity: 0.5)
-        FloatingIndicatorView(status: .transcribing, audioLevel: 0, microphoneSensitivity: 0.5)
+        FloatingIndicatorView(
+            model: FloatingIndicatorModel(
+                status: .recording,
+                audioLevel: 0.8,
+                microphoneSensitivity: 0.5
+            )
+        )
+        FloatingIndicatorView(
+            model: FloatingIndicatorModel(
+                status: .transcribing,
+                audioLevel: 0,
+                microphoneSensitivity: 0.5
+            )
+        )
     }
     .padding()
 }
