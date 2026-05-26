@@ -62,7 +62,7 @@ final class AppState: ObservableObject {
                 let transcript = try await transcriptionService.transcribe(
                     audio,
                     language: settings.language,
-                    model: settings.model
+                    model: settings.profile.model
                 )
                 lastTranscript = transcript
 
@@ -89,9 +89,9 @@ final class AppState: ObservableObject {
     func prewarmCurrentModel() {
         guard !isModelWarmingUp else { return }
 
-        let model = settings.model
+        let model = settings.profile.model
         isModelWarmingUp = true
-        modelWarmupMessage = "Loading \(model.rawValue)..."
+        modelWarmupMessage = "Loading \(settings.profile.rawValue) (\(model.rawValue))..."
 
         Task {
             do {

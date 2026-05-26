@@ -6,7 +6,7 @@
 - Приложение запускается как menu bar app без основного окна.
 - Добавлены `AppState`, базовые модели, services skeleton и settings window.
 - Реализован ручной Start/Stop flow для записи, WhisperKit transcription и paste flow.
-- По умолчанию используется `Large v3 Turbo` (`openai_whisper-large-v3_turbo_954MB`); доступны `Tiny`, `Small` и `Large v3`.
+- По умолчанию используется профиль `Balanced` с `Large v3 Turbo 632MB` (`openai_whisper-large-v3-v20240930_turbo_632MB`); доступны профили `Fast` (`Tiny`) и `Accurate` (`Large v3`).
 - Реализован global hold-to-record hotkey `Fn` через `CGEvent` event tap.
 - Добавлен permissions UI для Microphone и Accessibility в menu bar и settings.
 - Целевой продукт: macOS 14+ menu bar app для локальной голосовой диктовки.

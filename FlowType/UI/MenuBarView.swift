@@ -69,7 +69,11 @@ struct MenuBarView: View {
             Label(appState.status.rawValue, systemImage: appState.status.systemImageName)
                 .font(.headline)
 
-            Text("Model: \(appState.settings.model.rawValue)")
+            Text("Profile: \(appState.settings.profile.rawValue)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text("Model: \(appState.settings.profile.model.rawValue)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

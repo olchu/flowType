@@ -34,13 +34,22 @@ struct SettingsView: View {
             }
 
             Section("Transcription") {
-                Picker("Model", selection: $appState.settings.model) {
-                    ForEach(TranscriptionModel.allCases) { model in
-                        Text(model.rawValue).tag(model)
+                Picker("Profile", selection: $appState.settings.profile) {
+                    ForEach(TranscriptionProfile.allCases) { profile in
+                        Text(profile.rawValue).tag(profile)
                     }
                 }
-                .onChange(of: appState.settings.model) {
+                .onChange(of: appState.settings.profile) {
                     appState.prewarmCurrentModel()
+                }
+
+                Text(appState.settings.profile.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                LabeledContent("Model") {
+                    Text(appState.settings.profile.model.rawValue)
+                        .foregroundStyle(.secondary)
                 }
 
                 LabeledContent("Model status") {
