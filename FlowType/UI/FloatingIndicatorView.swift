@@ -3,12 +3,13 @@ import SwiftUI
 struct FloatingIndicatorView: View {
     let status: AppStatus
     let audioLevel: Double
+    let microphoneSensitivity: Double
 
     var body: some View {
         HStack(spacing: 12) {
             switch status {
             case .recording:
-                RecordingBarsView(audioLevel: audioLevel)
+                RecordingBarsView(audioLevel: audioLevel, microphoneSensitivity: microphoneSensitivity)
             case .transcribing:
                 TranscribingLettersView()
             case .ready:
@@ -27,6 +28,7 @@ struct FloatingIndicatorView: View {
 
 private struct RecordingBarsView: View {
     let audioLevel: Double
+    let microphoneSensitivity: Double
 
     private let bars = Array(0..<8)
 
@@ -46,18 +48,21 @@ private struct RecordingBarsView: View {
     }
 
     private func height(for index: Int, time: TimeInterval) -> CGFloat {
-        guard audioLevel > 0.04 else { return 4 }
+        let threshold = 0.09 - min(max(microphoneSensitivity, 0), 1) * 0.08
+        let gatedLevel = max(0, (audioLevel - threshold) / max(0.01, 1 - threshold))
+        guard gatedLevel > 0 else { return 4 }
 
         let speeds: [Double] = [7.6, 4.9, 8.8, 5.7, 9.4, 6.5, 8.1, 5.2]
         let phases: [Double] = [0.1, 1.7, 3.4, 0.8, 2.6, 4.1, 1.2, 3.0]
         let beat = abs(sin(time * speeds[index] + phases[index]))
         let flicker = abs(sin(time * speeds[index] * 0.43 + phases[index] * 1.8))
-        let level = min(1, (beat * 0.72 + flicker * 0.42) * (0.35 + audioLevel * 1.15))
+        let level = min(1, (beat * 0.72 + flicker * 0.42) * (0.35 + gatedLevel * 1.15))
         return 4 + CGFloat(level) * 12
     }
 
     private func opacity(for index: Int, time: TimeInterval) -> Double {
-        guard audioLevel > 0.04 else { return 0.38 }
+        let threshold = 0.09 - min(max(microphoneSensitivity, 0), 1) * 0.08
+        guard audioLevel > threshold else { return 0.38 }
 
         let phase = time * (6.0 + Double(index).truncatingRemainder(dividingBy: 3)) + Double(index)
         let normalized = abs(sin(phase))
@@ -111,8 +116,8 @@ private struct StatusTextView: View {
 
 #Preview {
     VStack(spacing: 20) {
-        FloatingIndicatorView(status: .recording, audioLevel: 0.8)
-        FloatingIndicatorView(status: .transcribing, audioLevel: 0)
+        FloatingIndicatorView(status: .recording, audioLevel: 0.8, microphoneSensitivity: 0.5)
+        FloatingIndicatorView(status: .transcribing, audioLevel: 0, microphoneSensitivity: 0.5)
     }
     .padding()
 }

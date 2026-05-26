@@ -10,7 +10,7 @@
 - Реализован global hold-to-record hotkey `Fn` через `CGEvent` event tap.
 - Менюбар очищен: в нем остались только короткий статус, кнопка настроек и выход.
 - Добавлен floating indicator: во время записи показывает компактные audio bars от реального уровня микрофона, во время распознавания - анимацию `A B C`, затем скрывается.
-- Settings содержит permissions, hotkey status, transcription settings, paste settings и управление локальными моделями.
+- Settings содержит permissions, hotkey status, transcription settings, indicator sensitivity, paste settings и управление локальными моделями.
 - Paste fallback: при детектируемом сбое автоматической вставки распознанный текст остается в clipboard, а Settings показывает понятную ошибку.
 - Модели можно скачивать и реально удалять с диска из `~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/<model-id>`.
 - Модель прогревается заранее; запись блокируется, если выбранная модель еще не скачана или прогревается.
@@ -31,7 +31,7 @@
 
 Примечание: этапы 4 и 5 теперь передают audio samples напрямую в `WhisperKit.transcribe(audioArray:)`; перед вызовом samples ресемплируются в памяти до 16 kHz.
 
-Примечание: настройки профиля, языка и paste behavior сохраняются в `UserDefaults`.
+Примечание: настройки профиля, языка, чувствительности индикатора и paste behavior сохраняются в `UserDefaults`.
 
 ## Целевая структура MVP
 
@@ -171,7 +171,7 @@ FlowType/
 
 ## Этап 8: Settings
 
-1. Реализовать UI настроек для permissions, hotkey, моделей, языка, auto paste и restore clipboard.
+1. Реализовать UI настроек для permissions, hotkey, моделей, языка, indicator sensitivity, auto paste и restore clipboard.
 2. Добавить выбор профиля модели: `Fast`, `Balanced`, `Accurate`.
 3. Добавить управление локальными моделями: status, download, delete.
 4. Сохранять настройки через `UserDefaults` или `@AppStorage`.

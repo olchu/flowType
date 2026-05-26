@@ -6,12 +6,13 @@ import Foundation
 final class AppState: ObservableObject {
     @Published var status: AppStatus = .ready {
         didSet {
-            floatingIndicatorController.update(for: status, audioLevel: audioLevel)
+            updateFloatingIndicator()
         }
     }
     @Published var settings = AppSettings() {
         didSet {
             settingsStorageService.save(settings)
+            updateFloatingIndicator()
         }
     }
     @Published var lastTranscript = ""
@@ -40,7 +41,7 @@ final class AppState: ObservableObject {
         audioRecorder.onLevelChanged = { [weak self] level in
             guard let self else { return }
             audioLevel = level
-            floatingIndicatorController.update(for: status, audioLevel: level)
+            updateFloatingIndicator()
         }
 
         refreshPermissions()
@@ -268,5 +269,13 @@ final class AppState: ObservableObject {
     private func showPasteFallback(_ error: Error) {
         lastErrorMessage = error.localizedDescription
         status = .error
+    }
+
+    private func updateFloatingIndicator() {
+        floatingIndicatorController.update(
+            for: status,
+            audioLevel: audioLevel,
+            microphoneSensitivity: settings.microphoneSensitivity
+        )
     }
 }

@@ -9,6 +9,7 @@ struct SettingsView: View {
             permissionsSection
             modelsSection
             transcriptionSection
+            indicatorSection
             pasteSection
             hotkeySection
         }
@@ -114,6 +115,33 @@ struct SettingsView: View {
         Section("Paste") {
             Toggle("Auto paste", isOn: $appState.settings.autoPaste)
             Toggle("Restore clipboard after paste", isOn: $appState.settings.restoreClipboard)
+        }
+    }
+
+    private var indicatorSection: some View {
+        Section("Indicator") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Microphone sensitivity")
+
+                    Spacer()
+
+                    Text("\(Int(appState.settings.microphoneSensitivity * 100))%")
+                        .foregroundStyle(.secondary)
+                }
+
+                Slider(value: $appState.settings.microphoneSensitivity, in: 0...1) {
+                    EmptyView()
+                } minimumValueLabel: {
+                    Image(systemName: "speaker")
+                } maximumValueLabel: {
+                    Image(systemName: "speaker.wave.3")
+                }
+            }
+
+            Text("Lower values ignore more background noise. Higher values make the bars react to quieter speech.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
