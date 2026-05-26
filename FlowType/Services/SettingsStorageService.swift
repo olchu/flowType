@@ -3,6 +3,7 @@ import Foundation
 final class SettingsStorageService {
     private let defaults: UserDefaults
     private let key = "appSettings"
+    private let onboardingCompletedKey = "hasCompletedOnboarding"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -26,5 +27,13 @@ final class SettingsStorageService {
 
     func reset() {
         defaults.removeObject(forKey: key)
+    }
+
+    func hasCompletedOnboarding() -> Bool {
+        defaults.bool(forKey: onboardingCompletedKey)
+    }
+
+    func setOnboardingCompleted(_ isCompleted: Bool) {
+        defaults.set(isCompleted, forKey: onboardingCompletedKey)
     }
 }

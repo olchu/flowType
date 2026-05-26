@@ -26,6 +26,7 @@ final class AppState: ObservableObject {
     @Published private(set) var modelStorageStates: [TranscriptionModel: ModelStorageState] = [:]
     @Published private(set) var audioLevel: Double = 0
     @Published private(set) var resourceUsage = ProcessResourceUsage()
+    @Published private(set) var hasCompletedOnboarding = false
 
     private let audioRecorder = AudioRecorderService()
     private let hotkeyService = HotkeyService()
@@ -36,11 +37,13 @@ final class AppState: ObservableObject {
     private let settingsStorageService = SettingsStorageService()
     private let resourceMonitorService = ProcessResourceMonitorService()
     private let floatingIndicatorController = FloatingIndicatorController()
+    private lazy var onboardingWindowController = OnboardingWindowController(appState: self)
     private var dictationTargetApplication: NSRunningApplication?
     private var resourceUsageTask: Task<Void, Never>?
 
     init() {
         settings = settingsStorageService.load()
+        hasCompletedOnboarding = settingsStorageService.hasCompletedOnboarding()
         audioRecorder.onLevelChanged = { [weak self] level in
             guard let self else { return }
             audioLevel = level
@@ -52,6 +55,10 @@ final class AppState: ObservableObject {
         configureHotkey()
         prewarmCurrentModel()
         startResourceUsageMonitoring()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            self?.showOnboardingIfNeeded()
+        }
     }
 
     deinit {
@@ -91,6 +98,10 @@ final class AppState: ObservableObject {
 
     var canStopRecording: Bool {
         status == .recording
+    }
+
+    var selectedModelStorageState: ModelStorageState {
+        modelStorageStates[settings.profile.model] ?? .notDownloaded
     }
 
     func startDictation() {
@@ -197,6 +208,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    func downloadSelectedModelFromOnboarding() {
+        download(settings.profile.model)
+    }
+
+    func finishOnboarding() {
+        hasCompletedOnboarding = true
+        settingsStorageService.setOnboardingCompleted(true)
+        onboardingWindowController.close()
+    }
+
     func delete(_ model: TranscriptionModel) {
         modelStorageStates[model] = .deleting
 
@@ -255,6 +276,16 @@ final class AppState: ObservableObject {
         settingsStorageService.reset()
         settings = AppSettings()
         prewarmCurrentModel()
+    }
+
+    func showOnboardingIfNeeded() {
+        guard !hasCompletedOnboarding else { return }
+        guard selectedModelStorageState != .downloaded else {
+            finishOnboarding()
+            return
+        }
+
+        onboardingWindowController.show()
     }
 
     private func configureHotkey() {

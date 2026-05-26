@@ -14,6 +14,7 @@
 - Floating indicator появляется с intro-анимацией: черная точка раскрывается в капсулу, затем появляется содержимое.
 - Settings содержит permissions, hotkey status, transcription settings, indicator sensitivity, paste settings и управление локальными моделями.
 - Settings содержит Reset Settings: возврат профиля, языка, paste behavior и чувствительности индикатора к значениям по умолчанию без удаления моделей и без изменения permissions.
+- При первом запуске показывается onboarding-окно, если выбранная модель еще не скачана: оно объясняет, что нужна локальная WhisperKit-модель, и дает кнопку Download Model.
 - Paste fallback: при детектируемом сбое автоматической вставки распознанный текст остается в clipboard, а Settings показывает понятную ошибку.
 - Paste использует clipboard + `Cmd+V` как основной надежный путь; Accessibility focused text element остается запасным вариантом, если не удалось создать keyboard paste events.
 - Silence gate: если пользователь зажал `Fn`, промолчал и отпустил, запись не отправляется в WhisperKit и ничего не вставляется.
@@ -220,7 +221,7 @@ MenuBarExtra
 
 ## Открытые вопросы
 
-- Нужно ли автоматически скачивать `Balanced` при первом запуске или оставить явную кнопку Download?
+- Нужно ли автоматически скачивать `Balanced` при первом запуске или оставить явную кнопку Download? Сейчас выбран явный onboarding с кнопкой Download Model.
 - Нужен ли fallback-ввод через Accessibility focused text element для приложений, где `Cmd+V` не работает?
 - Нужен ли режим streaming/chunked transcription для длинных диктовок?
 - Нужно ли хранить историю последних транскриптов или это риск для приватности?
