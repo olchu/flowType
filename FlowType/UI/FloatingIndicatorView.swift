@@ -4,9 +4,11 @@ import SwiftUI
 @MainActor
 final class FloatingIndicatorModel: ObservableObject {
     @Published var status: AppStatus = .ready
+    @Published var isLoading = false
     @Published var audioLevel: Double = 0
     @Published var microphoneSensitivity: Double = 0.5
     @Published var presentationID = 0
+    @Published var dismissalID = 0
 
     init(
         status: AppStatus = .ready,
@@ -25,12 +27,27 @@ final class FloatingIndicatorModel: ObservableObject {
         startsNewPresentation: Bool
     ) {
         self.status = status
+        isLoading = false
         self.audioLevel = audioLevel
         self.microphoneSensitivity = microphoneSensitivity
 
         if startsNewPresentation {
             presentationID += 1
         }
+    }
+
+    func updateLoading(startsNewPresentation: Bool) {
+        status = .ready
+        isLoading = true
+        audioLevel = 0
+
+        if startsNewPresentation {
+            presentationID += 1
+        }
+    }
+
+    func beginDismissal() {
+        dismissalID += 1
     }
 }
 
@@ -39,6 +56,7 @@ struct FloatingIndicatorView: View {
 
     @State private var isExpanded = false
     @State private var showsContent = false
+    @State private var animationTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -55,23 +73,30 @@ struct FloatingIndicatorView: View {
         .onChange(of: model.presentationID) {
             runIntroAnimation()
         }
+        .onChange(of: model.dismissalID) {
+            runDismissalAnimation()
+        }
     }
 
     @ViewBuilder
     private var content: some View {
         HStack(spacing: 12) {
-            switch model.status {
-            case .recording:
-                RecordingBarsView(
-                    audioLevel: model.audioLevel,
-                    microphoneSensitivity: model.microphoneSensitivity
-                )
-            case .transcribing:
-                TranscribingDotsView()
-            case .ready:
-                EmptyView()
-            case .error:
-                StatusTextView(text: "Error")
+            if model.isLoading {
+                LoadingStatusView()
+            } else {
+                switch model.status {
+                case .recording:
+                    RecordingBarsView(
+                        audioLevel: model.audioLevel,
+                        microphoneSensitivity: model.microphoneSensitivity
+                    )
+                case .transcribing:
+                    TranscribingDotsView()
+                case .ready:
+                    EmptyView()
+                case .error:
+                    StatusTextView(text: "Error")
+                }
             }
         }
         .frame(minWidth: 54, minHeight: 14)
@@ -80,6 +105,7 @@ struct FloatingIndicatorView: View {
     }
 
     private func runIntroAnimation() {
+        animationTask?.cancel()
         showsContent = false
         isExpanded = false
 
@@ -87,10 +113,27 @@ struct FloatingIndicatorView: View {
             isExpanded = true
         }
 
-        Task { @MainActor in
+        animationTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(170))
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.08)) {
                 showsContent = true
+            }
+        }
+    }
+
+    private func runDismissalAnimation() {
+        animationTask?.cancel()
+
+        withAnimation(.easeIn(duration: 0.08)) {
+            showsContent = false
+        }
+
+        animationTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(70))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeIn(duration: 0.12)) {
+                isExpanded = false
             }
         }
     }
@@ -183,6 +226,22 @@ private struct StatusTextView: View {
     }
 }
 
+private struct LoadingStatusView: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 24)) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            let pulse = (sin(time * 3.6) + 1) / 2
+
+            Text("Loading")
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .frame(height: 10)
+                .opacity(0.58 + pulse * 0.42)
+                .scaleEffect(0.98 + pulse * 0.02)
+        }
+    }
+}
+
 #Preview {
     VStack(spacing: 20) {
         FloatingIndicatorView(
@@ -198,6 +257,13 @@ private struct StatusTextView: View {
                 audioLevel: 0,
                 microphoneSensitivity: 0.5
             )
+        )
+        FloatingIndicatorView(
+            model: {
+                let model = FloatingIndicatorModel()
+                model.updateLoading(startsNewPresentation: true)
+                return model
+            }()
         )
     }
     .padding()

@@ -21,7 +21,11 @@ final class AppState: ObservableObject {
     @Published private(set) var hotkeyStatusMessage = "Waiting for Accessibility permission."
     @Published private(set) var hasAccessibilityPermission = false
     @Published private(set) var microphonePermission: PermissionStatus = .unknown
-    @Published private(set) var isModelWarmingUp = false
+    @Published private(set) var isModelWarmingUp = false {
+        didSet {
+            updateFloatingIndicator()
+        }
+    }
     @Published private(set) var modelWarmupMessage = "Model is not loaded yet."
     @Published private(set) var modelLoadingProgress: Double = 0
     @Published private(set) var modelStorageStates: [TranscriptionModel: ModelStorageState] = [:]
@@ -369,6 +373,7 @@ final class AppState: ObservableObject {
     private func updateFloatingIndicator() {
         floatingIndicatorController.update(
             for: status,
+            isModelLoading: isModelWarmingUp,
             audioLevel: audioLevel,
             microphoneSensitivity: settings.microphoneSensitivity
         )

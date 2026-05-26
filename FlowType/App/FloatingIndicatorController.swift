@@ -6,30 +6,65 @@ final class FloatingIndicatorController {
     private var panel: NSPanel?
     private let model = FloatingIndicatorModel()
     private var hideTask: Task<Void, Never>?
+    private var isDismissalInProgress = false
+    private let dismissalDuration: Duration = .milliseconds(190)
 
     func update(
         for status: AppStatus,
+        isModelLoading: Bool,
         audioLevel: Double = 0,
         microphoneSensitivity: Double = 0.5
     ) {
-        hideTask?.cancel()
+        let shouldReplayPresentation = isDismissalInProgress
+        cancelPendingHide()
+
+        if isModelLoading {
+            showLoading(forceNewPresentation: shouldReplayPresentation)
+            return
+        }
 
         switch status {
         case .recording, .transcribing:
-            show(status, audioLevel: audioLevel, microphoneSensitivity: microphoneSensitivity)
+            show(
+                status,
+                audioLevel: audioLevel,
+                microphoneSensitivity: microphoneSensitivity,
+                forceNewPresentation: shouldReplayPresentation
+            )
         case .ready:
             hide()
         case .error:
             if panel?.isVisible == true {
-                show(status, audioLevel: audioLevel, microphoneSensitivity: microphoneSensitivity)
+                show(
+                    status,
+                    audioLevel: audioLevel,
+                    microphoneSensitivity: microphoneSensitivity,
+                    forceNewPresentation: shouldReplayPresentation
+                )
                 scheduleHide()
             }
         }
     }
 
-    private func show(_ status: AppStatus, audioLevel: Double, microphoneSensitivity: Double) {
+    private func showLoading(forceNewPresentation: Bool = false) {
         let panel = panel ?? makePanel()
-        let startsNewPresentation = !panel.isVisible
+        let startsNewPresentation = !panel.isVisible || forceNewPresentation
+
+        model.updateLoading(startsNewPresentation: startsNewPresentation)
+
+        position(panel)
+        panel.orderFrontRegardless()
+        self.panel = panel
+    }
+
+    private func show(
+        _ status: AppStatus,
+        audioLevel: Double,
+        microphoneSensitivity: Double,
+        forceNewPresentation: Bool = false
+    ) {
+        let panel = panel ?? makePanel()
+        let startsNewPresentation = !panel.isVisible || forceNewPresentation
 
         model.update(
             status: status,
@@ -44,8 +79,36 @@ final class FloatingIndicatorController {
     }
 
     private func hide() {
+        beginDismissal(cancelExistingTask: true)
+    }
+
+    private func beginDismissal(cancelExistingTask: Bool) {
+        if cancelExistingTask {
+            hideTask?.cancel()
+        }
+
+        guard panel?.isVisible == true else {
+            panel?.orderOut(nil)
+            return
+        }
+
+        model.beginDismissal()
+        isDismissalInProgress = true
+        let dismissalDuration = dismissalDuration
+        hideTask = Task { [weak self] in
+            try? await Task.sleep(for: dismissalDuration)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.isDismissalInProgress = false
+                self?.panel?.orderOut(nil)
+            }
+        }
+    }
+
+    private func cancelPendingHide() {
         hideTask?.cancel()
-        panel?.orderOut(nil)
+        hideTask = nil
+        isDismissalInProgress = false
     }
 
     private func scheduleHide() {
@@ -53,7 +116,7 @@ final class FloatingIndicatorController {
             try? await Task.sleep(for: .milliseconds(850))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                self?.panel?.orderOut(nil)
+                self?.beginDismissal(cancelExistingTask: false)
             }
         }
     }
@@ -87,9 +150,10 @@ final class FloatingIndicatorController {
         guard let screen = NSScreen.main else { return }
 
         let size = panel.contentView?.fittingSize ?? NSSize(width: 72, height: 22)
+        let dockAwareBottomInset: CGFloat = 20
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - size.width / 2
-        let y = visibleFrame.minY + 32
+        let y = visibleFrame.minY + dockAwareBottomInset
 
         panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)
     }
