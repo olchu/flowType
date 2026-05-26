@@ -9,9 +9,11 @@
 - По умолчанию используется профиль `Balanced` с `Large v3 Turbo 632MB` (`openai_whisper-large-v3-v20240930_turbo_632MB`); доступны профили `Fast` (`Tiny`) и `Accurate` (`Large v3`).
 - Реализован global hold-to-record hotkey `Fn` через `CGEvent` event tap.
 - Менюбар очищен: в нем остались короткий статус, усредненный CPU/memory usage текущего процесса, кнопка настроек и выход.
+- Добавлены собственные иконки: `AppIcon` для приложения и template `statusbar` для status bar item.
 - Добавлен floating indicator: во время записи показывает компактные audio bars от реального уровня микрофона, во время распознавания - анимацию `A B C`, затем скрывается.
 - Settings содержит permissions, hotkey status, transcription settings, indicator sensitivity, paste settings и управление локальными моделями.
 - Paste fallback: при детектируемом сбое автоматической вставки распознанный текст остается в clipboard, а Settings показывает понятную ошибку.
+- Paste использует clipboard + `Cmd+V` как основной надежный путь; Accessibility focused text element остается запасным вариантом, если не удалось создать keyboard paste events.
 - Silence gate: если пользователь зажал `Fn`, промолчал и отпустил, запись не отправляется в WhisperKit и ничего не вставляется.
 - Модели можно скачивать и реально удалять с диска из `~/Documents/huggingface/models/argmaxinc/whisperkit-coreml/<model-id>`.
 - Модель прогревается заранее; запись блокируется, если выбранная модель еще не скачана или прогревается.
@@ -154,6 +156,7 @@ FlowType/
 5. Восстанавливать предыдущий clipboard, если настройка включена.
 6. Добавить fallback: если paste не удался, оставлять текст в clipboard и показывать ошибку/статус.
 7. Запоминать активное приложение при старте записи и возвращать фокус перед вставкой.
+8. Использовать Accessibility focused text element как fallback, если не удалось создать keyboard paste events.
 
 Критерии готовности:
 - Текст вставляется в активное поле ввода.

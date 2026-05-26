@@ -5,12 +5,15 @@ import Foundation
 final class PasteService {
     enum PasteError: LocalizedError {
         case accessibilityPermissionMissing
+        case accessibilityInsertionFailed
         case eventCreationFailed
 
         var errorDescription: String? {
             switch self {
             case .accessibilityPermissionMissing:
                 "Automatic paste needs Accessibility permission. The transcript was copied to the clipboard."
+            case .accessibilityInsertionFailed:
+                "Could not insert text into the focused field. The transcript was copied to the clipboard."
             case .eventCreationFailed:
                 "Could not create paste keyboard events. The transcript was copied to the clipboard."
             }
@@ -24,17 +27,22 @@ final class PasteService {
         restoreClipboard: Bool,
         into targetApplication: NSRunningApplication?
     ) async throws {
-        let snapshot = ClipboardSnapshot.capture(from: pasteboard)
-
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-
         guard AXIsProcessTrusted() else {
+            copyToClipboard(text)
             throw PasteError.accessibilityPermissionMissing
         }
 
         await activate(targetApplication)
-        try sendPasteCommand()
+
+        let snapshot = ClipboardSnapshot.capture(from: pasteboard)
+        copyToClipboard(text)
+        do {
+            try sendPasteCommand()
+        } catch {
+            guard insertTextUsingAccessibility(text) else {
+                throw error
+            }
+        }
 
         if restoreClipboard {
             Task {
@@ -55,6 +63,37 @@ final class PasteService {
 
         application.activate(options: [.activateIgnoringOtherApps])
         try? await Task.sleep(for: .milliseconds(150))
+    }
+
+    private func insertTextUsingAccessibility(_ text: String) -> Bool {
+        let systemWideElement = AXUIElementCreateSystemWide()
+        var focusedElement: CFTypeRef?
+
+        let focusedElementResult = AXUIElementCopyAttributeValue(
+            systemWideElement,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedElement
+        )
+        guard
+            focusedElementResult == .success,
+            let focusedElement,
+            CFGetTypeID(focusedElement) == AXUIElementGetTypeID()
+        else {
+            return false
+        }
+
+        let result = AXUIElementSetAttributeValue(
+            focusedElement as! AXUIElement,
+            kAXSelectedTextAttribute as CFString,
+            text as CFTypeRef
+        )
+
+        return result == .success
+    }
+
+    private func copyToClipboard(_ text: String) {
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 
     private func sendPasteCommand() throws {

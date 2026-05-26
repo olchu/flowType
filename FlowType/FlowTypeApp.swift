@@ -16,7 +16,8 @@ struct FlowTypeApp: App {
             MenuBarView()
                 .environmentObject(appState)
         } label: {
-            Label("FlowType", systemImage: appState.status.systemImageName)
+            Image("statusbar")
+                .accessibilityLabel("FlowType")
         }
         .menuBarExtraStyle(.menu)
 
