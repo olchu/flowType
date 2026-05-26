@@ -12,6 +12,7 @@ struct SettingsView: View {
             indicatorSection
             pasteSection
             hotkeySection
+            resetSection
         }
         .formStyle(.grouped)
         .padding()
@@ -164,6 +165,20 @@ struct SettingsView: View {
                 appState.restartHotkey()
             } label: {
                 Label("Restart Hotkey", systemImage: "keyboard")
+            }
+        }
+    }
+
+    private var resetSection: some View {
+        Section("Reset") {
+            Text("Restore default profile, language, paste behavior, and indicator sensitivity. Downloaded models and permissions are not changed.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Button(role: .destructive) {
+                appState.resetSettingsToDefaults()
+            } label: {
+                Label("Reset Settings", systemImage: "arrow.counterclockwise")
             }
         }
     }

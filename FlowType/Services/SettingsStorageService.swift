@@ -23,4 +23,8 @@ final class SettingsStorageService {
         guard let data = try? JSONEncoder().encode(settings) else { return }
         defaults.set(data, forKey: key)
     }
+
+    func reset() {
+        defaults.removeObject(forKey: key)
+    }
 }

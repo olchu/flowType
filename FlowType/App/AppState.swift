@@ -251,6 +251,12 @@ final class AppState: ObservableObject {
         resourceUsage = resourceMonitorService.currentUsage()
     }
 
+    func resetSettingsToDefaults() {
+        settingsStorageService.reset()
+        settings = AppSettings()
+        prewarmCurrentModel()
+    }
+
     private func configureHotkey() {
         guard hasAccessibilityPermission else {
             isHotkeyRunning = false
