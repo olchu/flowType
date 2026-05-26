@@ -12,6 +12,8 @@ final class AppState: ObservableObject {
     @Published private(set) var hotkeyStatusMessage = "Waiting for Accessibility permission."
     @Published private(set) var hasAccessibilityPermission = false
     @Published private(set) var microphonePermission: PermissionStatus = .unknown
+    @Published private(set) var isModelWarmingUp = false
+    @Published private(set) var modelWarmupMessage = "Model is not loaded yet."
 
     private let audioRecorder = AudioRecorderService()
     private let hotkeyService = HotkeyService()
@@ -23,10 +25,13 @@ final class AppState: ObservableObject {
     init() {
         refreshPermissions()
         configureHotkey()
+        prewarmCurrentModel()
     }
 
     var canStartRecording: Bool {
-        (status == .ready || status == .error) && microphonePermission.isGranted
+        (status == .ready || status == .error)
+            && microphonePermission.isGranted
+            && !isModelWarmingUp
     }
 
     var canStopRecording: Bool {
@@ -79,6 +84,26 @@ final class AppState: ObservableObject {
     func clearError() {
         lastErrorMessage = nil
         status = .ready
+    }
+
+    func prewarmCurrentModel() {
+        guard !isModelWarmingUp else { return }
+
+        let model = settings.model
+        isModelWarmingUp = true
+        modelWarmupMessage = "Loading \(model.rawValue)..."
+
+        Task {
+            do {
+                try await transcriptionService.prewarm(model: model)
+                modelWarmupMessage = "\(model.rawValue) is ready."
+            } catch {
+                modelWarmupMessage = "Could not load \(model.rawValue)."
+                showError(error)
+            }
+
+            isModelWarmingUp = false
+        }
     }
 
     func restartHotkey() {

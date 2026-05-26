@@ -39,6 +39,14 @@ struct SettingsView: View {
                         Text(model.rawValue).tag(model)
                     }
                 }
+                .onChange(of: appState.settings.model) {
+                    appState.prewarmCurrentModel()
+                }
+
+                LabeledContent("Model status") {
+                    Text(appState.modelWarmupMessage)
+                        .foregroundStyle(appState.isModelWarmingUp ? Color.orange : Color.secondary)
+                }
 
                 Picker("Language", selection: $appState.settings.language) {
                     ForEach(TranscriptionLanguage.allCases) { language in

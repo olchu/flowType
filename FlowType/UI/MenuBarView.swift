@@ -73,6 +73,10 @@ struct MenuBarView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            Text(appState.modelWarmupMessage)
+                .font(.caption)
+                .foregroundStyle(appState.isModelWarmingUp ? Color.orange : Color.secondary)
+
             Text("Microphone: \(appState.microphonePermission.rawValue)")
                 .font(.caption)
                 .foregroundStyle(appState.microphonePermission.isGranted ? Color.secondary : Color.red)

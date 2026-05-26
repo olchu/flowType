@@ -25,6 +25,10 @@ final class TranscriptionService {
     private var pipeline: WhisperKit?
     private var loadedModel: TranscriptionModel?
 
+    func prewarm(model: TranscriptionModel) async throws {
+        _ = try await pipeline(for: model, shouldPrewarm: true)
+    }
+
     func transcribe(
         _ audio: RecordedAudio,
         language: TranscriptionLanguage,
@@ -40,7 +44,7 @@ final class TranscriptionService {
             throw TranscriptionError.missingAudioFile
         }
 
-        let pipeline = try await pipeline(for: model)
+        let pipeline = try await pipeline(for: model, shouldPrewarm: false)
         let options = DecodingOptions(
             language: language.whisperKitCode,
             detectLanguage: language == .auto
@@ -62,7 +66,10 @@ final class TranscriptionService {
         return transcript
     }
 
-    private func pipeline(for model: TranscriptionModel) async throws -> WhisperKit {
+    private func pipeline(
+        for model: TranscriptionModel,
+        shouldPrewarm: Bool
+    ) async throws -> WhisperKit {
         if let pipeline, loadedModel == model {
             return pipeline
         }
@@ -72,7 +79,7 @@ final class TranscriptionService {
             modelRepo: Self.modelRepo,
             verbose: false,
             logLevel: .error,
-            prewarm: false,
+            prewarm: shouldPrewarm,
             load: true,
             download: true
         )
