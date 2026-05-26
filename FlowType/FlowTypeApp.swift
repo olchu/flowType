@@ -9,9 +9,20 @@ import SwiftUI
 
 @main
 struct FlowTypeApp: App {
+    @StateObject private var appState = AppState()
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        MenuBarExtra {
+            MenuBarView()
+                .environmentObject(appState)
+        } label: {
+            Label("FlowType", systemImage: appState.status.systemImageName)
+        }
+        .menuBarExtraStyle(.menu)
+
+        Settings {
+            SettingsView()
+                .environmentObject(appState)
         }
     }
 }
