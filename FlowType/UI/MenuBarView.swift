@@ -12,6 +12,15 @@ struct MenuBarView: View {
 
             Divider()
 
+            VStack(alignment: .leading, spacing: 6) {
+                Label("CPU: \(appState.resourceUsage.formattedCPU)", systemImage: "cpu")
+                Label("Memory: \(appState.resourceUsage.formattedMemory)", systemImage: "memorychip")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Divider()
+
             Button {
                 openWindow(id: "settings")
                 NSApplication.shared.activate(ignoringOtherApps: true)

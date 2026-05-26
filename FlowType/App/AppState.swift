@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
     @Published private(set) var modelWarmupMessage = "Model is not loaded yet."
     @Published private(set) var modelStorageStates: [TranscriptionModel: ModelStorageState] = [:]
     @Published private(set) var audioLevel: Double = 0
+    @Published private(set) var resourceUsage = ProcessResourceUsage()
 
     private let audioRecorder = AudioRecorderService()
     private let hotkeyService = HotkeyService()
@@ -33,8 +34,10 @@ final class AppState: ObservableObject {
     private let pasteService = PasteService()
     private let modelStorageService = ModelStorageService()
     private let settingsStorageService = SettingsStorageService()
+    private let resourceMonitorService = ProcessResourceMonitorService()
     private let floatingIndicatorController = FloatingIndicatorController()
     private var dictationTargetApplication: NSRunningApplication?
+    private var resourceUsageTask: Task<Void, Never>?
 
     init() {
         settings = settingsStorageService.load()
@@ -48,6 +51,11 @@ final class AppState: ObservableObject {
         refreshModelStorageStates()
         configureHotkey()
         prewarmCurrentModel()
+        startResourceUsageMonitoring()
+    }
+
+    deinit {
+        resourceUsageTask?.cancel()
     }
 
     var isReadyForUse: Bool {
@@ -232,6 +240,10 @@ final class AppState: ObservableObject {
         }
     }
 
+    func refreshResourceUsage() {
+        resourceUsage = resourceMonitorService.currentUsage()
+    }
+
     private func configureHotkey() {
         guard hasAccessibilityPermission else {
             isHotkeyRunning = false
@@ -269,6 +281,17 @@ final class AppState: ObservableObject {
     private func showPasteFallback(_ error: Error) {
         lastErrorMessage = error.localizedDescription
         status = .error
+    }
+
+    private func startResourceUsageMonitoring() {
+        refreshResourceUsage()
+        resourceUsageTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                self?.refreshResourceUsage()
+            }
+        }
     }
 
     private func updateFloatingIndicator() {

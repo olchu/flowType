@@ -8,7 +8,7 @@
 - Реализован hold-to-record flow: `Fn` запускает запись, отпускание останавливает запись, запускает WhisperKit transcription и вставляет текст в активное приложение.
 - По умолчанию используется профиль `Balanced` с `Large v3 Turbo 632MB` (`openai_whisper-large-v3-v20240930_turbo_632MB`); доступны профили `Fast` (`Tiny`) и `Accurate` (`Large v3`).
 - Реализован global hold-to-record hotkey `Fn` через `CGEvent` event tap.
-- Менюбар очищен: в нем остались только короткий статус, кнопка настроек и выход.
+- Менюбар очищен: в нем остались короткий статус, CPU/memory usage текущего процесса, кнопка настроек и выход.
 - Добавлен floating indicator: во время записи показывает компактные audio bars от реального уровня микрофона, во время распознавания - анимацию `A B C`, затем скрывается.
 - Settings содержит permissions, hotkey status, transcription settings, indicator sensitivity, paste settings и управление локальными моделями.
 - Paste fallback: при детектируемом сбое автоматической вставки распознанный текст остается в clipboard, а Settings показывает понятную ошибку.
