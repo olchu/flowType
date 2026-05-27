@@ -21,6 +21,18 @@ struct RecordedAudio {
         return rms >= 0.012 && activeRatio >= 0.005
     }
 
+    func suffix(seconds: TimeInterval) -> RecordedAudio {
+        guard seconds > 0, sampleRate > 0, !samples.isEmpty else {
+            return self
+        }
+
+        let sampleCount = min(samples.count, Int((seconds * sampleRate).rounded()))
+        return RecordedAudio(
+            samples: Array(samples.suffix(sampleCount)),
+            sampleRate: sampleRate
+        )
+    }
+
     func samples(resampledTo targetSampleRate: Double) -> [Float] {
         guard sampleRate > 0, targetSampleRate > 0, !samples.isEmpty else {
             return samples

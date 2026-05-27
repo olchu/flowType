@@ -3,6 +3,11 @@ import WhisperKit
 
 @MainActor
 final class TranscriptionService {
+    struct StreamingTranscriptionResult {
+        let transcript: String
+        let coveredDuration: TimeInterval
+    }
+
     enum TranscriptionError: LocalizedError {
         case emptyRecording
         case emptyTranscript
@@ -19,6 +24,10 @@ final class TranscriptionService {
 
     private var pipeline: WhisperKit?
     private var loadedModel: TranscriptionModel?
+    private var streamTranscriber: AudioStreamTranscriber?
+    private var streamTask: Task<Void, Never>?
+    private var streamTranscript = ""
+    private var streamCoveredDuration: TimeInterval = 0
 
     func prewarm(model: TranscriptionModel, onProgress: (@Sendable (Double, String) -> Void)? = nil) async throws {
         _ = try await pipeline(for: model, shouldPrewarm: true, onProgress: onProgress)
@@ -36,7 +45,8 @@ final class TranscriptionService {
         let pipeline = try await pipeline(for: model, shouldPrewarm: false)
         let options = DecodingOptions(
             language: language.whisperKitCode,
-            detectLanguage: language == .auto
+            detectLanguage: language == .auto,
+            skipSpecialTokens: true
         )
         let samples = audio.samples(resampledTo: Double(WhisperKit.sampleRate))
         let results = try await pipeline.transcribe(
@@ -46,6 +56,8 @@ final class TranscriptionService {
 
         let transcript = results
             .map(\.text)
+            .map(Self.cleanTranscriptText)
+            .filter { !$0.isEmpty }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -54,6 +66,75 @@ final class TranscriptionService {
         }
 
         return transcript
+    }
+
+    func startStreamingTranscription(
+        language: TranscriptionLanguage,
+        model: TranscriptionModel,
+        onTranscriptChanged: @escaping @MainActor @Sendable (String) -> Void
+    ) async throws {
+        await stopStreamingTranscription()
+        streamTranscript = ""
+        streamCoveredDuration = 0
+
+        let pipeline = try await pipeline(for: model, shouldPrewarm: false)
+        guard let tokenizer = pipeline.tokenizer else {
+            throw WhisperError.tokenizerUnavailable()
+        }
+
+        let options = DecodingOptions(
+            language: language.whisperKitCode,
+            detectLanguage: language == .auto,
+            skipSpecialTokens: true,
+            wordTimestamps: true,
+            concurrentWorkerCount: 1
+        )
+
+        let transcriber = AudioStreamTranscriber(
+            audioEncoder: pipeline.audioEncoder,
+            featureExtractor: pipeline.featureExtractor,
+            segmentSeeker: pipeline.segmentSeeker,
+            textDecoder: pipeline.textDecoder,
+            tokenizer: tokenizer,
+            audioProcessor: pipeline.audioProcessor,
+            decodingOptions: options,
+            requiredSegmentsForConfirmation: 1
+        ) { [weak self] _, newState in
+            let transcript = Self.transcript(from: newState)
+            let coveredDuration = Self.coveredDuration(from: newState)
+            Task { @MainActor [weak self] in
+                self?.streamTranscript = transcript
+                self?.streamCoveredDuration = coveredDuration
+                onTranscriptChanged(transcript)
+            }
+        }
+
+        streamTranscriber = transcriber
+        streamTask = Task { [weak self] in
+            do {
+                try await transcriber.startStreamTranscription()
+            } catch {
+                await MainActor.run {
+                    self?.streamTranscript = ""
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    func stopStreamingTranscription() async -> StreamingTranscriptionResult {
+        await streamTranscriber?.stopStreamTranscription()
+        await streamTask?.value
+        streamTask = nil
+        streamTranscriber = nil
+        let transcript = streamTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let coveredDuration = streamCoveredDuration
+        streamTranscript = ""
+        streamCoveredDuration = 0
+        return StreamingTranscriptionResult(
+            transcript: transcript,
+            coveredDuration: coveredDuration
+        )
     }
 
     private func pipeline(
@@ -102,12 +183,45 @@ final class TranscriptionService {
         pipeline = nil
         loadedModel = nil
     }
+
+    nonisolated private static func transcript(from state: AudioStreamTranscriber.State) -> String {
+        let confirmedText = state.confirmedSegments.map(\.text)
+        let unconfirmedText = state.unconfirmedSegments.map(\.text)
+        let currentText = state.currentText == "Waiting for speech..." ? "" : state.currentText
+
+        return (confirmedText + unconfirmedText + [currentText])
+            .map(cleanTranscriptText)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    nonisolated private static func coveredDuration(from state: AudioStreamTranscriber.State) -> TimeInterval {
+        let segmentEnds = (state.confirmedSegments + state.unconfirmedSegments).map(\.end)
+        guard let end = segmentEnds.max() else {
+            return TimeInterval(state.lastConfirmedSegmentEndSeconds)
+        }
+
+        return TimeInterval(max(end, state.lastConfirmedSegmentEndSeconds))
+    }
+
+    nonisolated private static func cleanTranscriptText(_ text: String) -> String {
+        text.replacing(
+            /<\|[^|]+\|>/,
+            with: ""
+        )
+        .replacing(
+            /\s+/,
+            with: " "
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }
 
 // Sequentially matches WhisperKit loading log messages to progress values.
 // Thread-safe: can be called from any thread.
 private final class LoadingStageTracker: @unchecked Sendable {
-    private struct Stage {
+    private struct Stage: Sendable {
         let keyword: String
         let progress: Double
         let label: String
@@ -133,10 +247,10 @@ private final class LoadingStageTracker: @unchecked Sendable {
         Stage(keyword: "Loaded models for whisper", progress: 1.00, label: "Model ready"),
     ]
 
-    private var currentIndex = 0
+    nonisolated(unsafe) private var currentIndex = 0
     private let lock = NSLock()
 
-    func process(message: String) -> (Double, String)? {
+    nonisolated func process(message: String) -> (Double, String)? {
         lock.lock()
         defer { lock.unlock() }
 
