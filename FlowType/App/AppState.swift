@@ -240,7 +240,7 @@ final class AppState: ObservableObject {
         Task {
             do {
                 try modelStorageService.delete(model)
-                transcriptionService.resetLoadedModel(ifMatching: model)
+                await transcriptionService.resetLoadedModel(ifMatching: model)
                 modelStorageStates[model] = .notDownloaded
                 if model == settings.profile.model {
                     isModelWarmingUp = false

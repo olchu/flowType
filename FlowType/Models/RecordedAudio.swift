@@ -4,16 +4,16 @@ struct RecordedAudio {
     let samples: [Float]
     let sampleRate: Double
 
-    var duration: TimeInterval {
+    nonisolated var duration: TimeInterval {
         guard sampleRate > 0 else { return 0 }
         return TimeInterval(samples.count) / sampleRate
     }
 
-    var isEmpty: Bool {
+    nonisolated var isEmpty: Bool {
         samples.isEmpty
     }
 
-    var containsLikelySpeech: Bool {
+    nonisolated var containsLikelySpeech: Bool {
         guard duration >= 0.35, !samples.isEmpty else { return false }
 
         let rms = rootMeanSquareLevel
@@ -21,7 +21,7 @@ struct RecordedAudio {
         return rms >= 0.012 && activeRatio >= 0.005
     }
 
-    func samples(resampledTo targetSampleRate: Double) -> [Float] {
+    nonisolated func samples(resampledTo targetSampleRate: Double) -> [Float] {
         guard sampleRate > 0, targetSampleRate > 0, !samples.isEmpty else {
             return samples
         }
@@ -47,7 +47,7 @@ struct RecordedAudio {
         }
     }
 
-    private var rootMeanSquareLevel: Double {
+    private nonisolated var rootMeanSquareLevel: Double {
         guard !samples.isEmpty else { return 0 }
 
         let sumSquares = samples.reduce(0) { partialResult, sample in
@@ -56,7 +56,7 @@ struct RecordedAudio {
         return sqrt(sumSquares / Double(samples.count))
     }
 
-    private func activeSampleRatio(above threshold: Float) -> Double {
+    private nonisolated func activeSampleRatio(above threshold: Float) -> Double {
         guard !samples.isEmpty else { return 0 }
 
         let activeSampleCount = samples.reduce(0) { partialResult, sample in

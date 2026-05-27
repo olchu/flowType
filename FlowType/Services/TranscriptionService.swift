@@ -1,8 +1,7 @@
 import Foundation
 import WhisperKit
 
-@MainActor
-final class TranscriptionService {
+actor TranscriptionService {
     enum TranscriptionError: LocalizedError {
         case emptyRecording
         case emptyTranscript
@@ -36,7 +35,8 @@ final class TranscriptionService {
         let pipeline = try await pipeline(for: model, shouldPrewarm: false)
         let options = DecodingOptions(
             language: language.whisperKitCode,
-            detectLanguage: language == .auto
+            detectLanguage: language == .auto,
+            concurrentWorkerCount: Self.transcriptionWorkerCount
         )
         let samples = audio.samples(resampledTo: Double(WhisperKit.sampleRate))
         let results = try await pipeline.transcribe(
@@ -97,6 +97,14 @@ final class TranscriptionService {
         return pipeline
     }
 
+    private static var transcriptionWorkerCount: Int? {
+        #if (os(macOS) || targetEnvironment(macCatalyst)) && arch(x86_64)
+        1
+        #else
+        nil
+        #endif
+    }
+
     func resetLoadedModel(ifMatching model: TranscriptionModel) {
         guard loadedModel == model else { return }
         pipeline = nil
@@ -133,10 +141,12 @@ private final class LoadingStageTracker: @unchecked Sendable {
         Stage(keyword: "Loaded models for whisper", progress: 1.00, label: "Model ready"),
     ]
 
-    private var currentIndex = 0
+    nonisolated(unsafe) private var currentIndex = 0
     private let lock = NSLock()
 
-    func process(message: String) -> (Double, String)? {
+    nonisolated init() {}
+
+    nonisolated func process(message: String) -> (Double, String)? {
         lock.lock()
         defer { lock.unlock() }
 

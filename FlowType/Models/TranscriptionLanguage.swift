@@ -5,9 +5,9 @@ enum TranscriptionLanguage: String, CaseIterable, Codable, Identifiable {
     case russian = "Russian"
     case english = "English"
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 
-    var whisperKitCode: String? {
+    nonisolated var whisperKitCode: String? {
         switch self {
         case .auto:
             nil

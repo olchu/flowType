@@ -6,7 +6,17 @@ CONFIGURATION="${CONFIGURATION:-Release}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-/private/tmp/${SCHEME}-${CONFIGURATION}}"
 DIST_DIR="${DIST_DIR:-dist}"
 
-BUILD_SETTINGS="$(xcodebuild -scheme "$SCHEME" -configuration "$CONFIGURATION" -showBuildSettings)"
+if [[ -n "${DESTINATION:-}" ]]; then
+  BUILD_DESTINATION="$DESTINATION"
+elif [[ "${ARCHS:-}" == "x86_64" ]]; then
+  BUILD_DESTINATION="platform=macOS,arch=x86_64"
+elif [[ "${ARCHS:-}" == "arm64" ]]; then
+  BUILD_DESTINATION="platform=macOS,arch=arm64"
+else
+  BUILD_DESTINATION="platform=macOS"
+fi
+
+BUILD_SETTINGS="$(xcodebuild -scheme "$SCHEME" -destination "$BUILD_DESTINATION" -configuration "$CONFIGURATION" -showBuildSettings)"
 PRODUCT_NAME="$(printf "%s\n" "$BUILD_SETTINGS" | awk -F'= ' '/ PRODUCT_NAME = / { print $2; exit }')"
 VERSION="$(printf "%s\n" "$BUILD_SETTINGS" | awk -F'= ' '/ MARKETING_VERSION = / { print $2; exit }')"
 
@@ -27,7 +37,7 @@ trap cleanup EXIT
 
 xcodebuild \
   -scheme "$SCHEME" \
-  -destination platform=macOS \
+  -destination "$BUILD_DESTINATION" \
   -configuration "$CONFIGURATION" \
   -derivedDataPath "$DERIVED_DATA_PATH" \
   build
