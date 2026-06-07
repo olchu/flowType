@@ -274,7 +274,7 @@ final class AppState: ObservableObject {
                 model: settings.profile.model
             )
             timing?.mark("tail decode completed chars=\(tailTranscript.count)")
-            let mergedTranscript = Self.mergedTranscript(base: streamingTranscript, tail: tailTranscript)
+            let mergedTranscript = TranscriptText.merged(base: streamingTranscript, tail: tailTranscript)
             timing?.mark("merge completed chars=\(mergedTranscript.count)")
             return mergedTranscript
         } catch {
@@ -312,68 +312,6 @@ final class AppState: ObservableObject {
 
         audioLevel = smoothedAudioLevel
         updateFloatingIndicator()
-    }
-
-    nonisolated private static func mergedTranscript(base: String, tail: String) -> String {
-        let base = normalizedTranscript(base)
-        let tail = normalizedTranscript(tail)
-
-        guard !base.isEmpty else { return tail }
-        guard !tail.isEmpty else { return base }
-
-        let baseWords = base.split(separator: " ").map(String.init)
-        let tailWords = tail.split(separator: " ").map(String.init)
-        let baseComparableWords = baseWords.map(comparableWord)
-        let tailComparableWords = tailWords.map(comparableWord)
-        let maxOverlap = min(baseWords.count, tailWords.count, 24)
-
-        for overlap in stride(from: maxOverlap, through: 1, by: -1) {
-            let baseSuffix = Array(baseComparableWords.suffix(overlap))
-            let tailPrefix = Array(tailComparableWords.prefix(overlap))
-
-            guard overlaps(baseSuffix, tailPrefix) else { continue }
-
-            let newTail = tailWords.dropFirst(overlap).joined(separator: " ")
-            return newTail.isEmpty ? base : "\(base) \(newTail)"
-        }
-
-        return "\(base) \(tail)"
-    }
-
-    nonisolated private static func normalizedTranscript(_ transcript: String) -> String {
-        transcript
-            .replacing(/\s+/, with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    nonisolated private static func comparableWord(_ word: String) -> String {
-        word
-            .lowercased()
-            .trimmingCharacters(in: .punctuationCharacters.union(.symbols))
-    }
-
-    nonisolated private static func overlaps(_ lhs: [String], _ rhs: [String]) -> Bool {
-        guard lhs.count == rhs.count else { return false }
-
-        let pairs = zip(lhs, rhs).filter { !$0.0.isEmpty && !$0.1.isEmpty }
-        guard !pairs.isEmpty else { return false }
-
-        let exactMatches = pairs.reduce(0) { count, pair in
-            count + (wordsMatch(pair.0, pair.1) ? 1 : 0)
-        }
-
-        switch pairs.count {
-        case 1:
-            return exactMatches == 1
-        case 2:
-            return exactMatches == 2
-        default:
-            return Double(exactMatches) / Double(pairs.count) >= 0.68
-        }
-    }
-
-    nonisolated private static func wordsMatch(_ lhs: String, _ rhs: String) -> Bool {
-        lhs == rhs || lhs.hasPrefix(rhs) || rhs.hasPrefix(lhs)
     }
 
     nonisolated private static func formattedSeconds(_ seconds: TimeInterval) -> String {

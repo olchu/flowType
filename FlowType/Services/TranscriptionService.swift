@@ -56,7 +56,7 @@ final class TranscriptionService {
 
         let transcript = results
             .map(\.text)
-            .map(Self.cleanTranscriptText)
+            .map(TranscriptText.clean)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -189,11 +189,7 @@ final class TranscriptionService {
         let unconfirmedText = state.unconfirmedSegments.map(\.text)
         let currentText = state.currentText == "Waiting for speech..." ? "" : state.currentText
 
-        return (confirmedText + unconfirmedText + [currentText])
-            .map(cleanTranscriptText)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return TranscriptText.merged(confirmedText + unconfirmedText + [currentText])
     }
 
     nonisolated private static func coveredDuration(from state: AudioStreamTranscriber.State) -> TimeInterval {
@@ -205,17 +201,6 @@ final class TranscriptionService {
         return TimeInterval(max(end, state.lastConfirmedSegmentEndSeconds))
     }
 
-    nonisolated private static func cleanTranscriptText(_ text: String) -> String {
-        text.replacing(
-            /<\|[^|]+\|>/,
-            with: ""
-        )
-        .replacing(
-            /\s+/,
-            with: " "
-        )
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }
 
 // Sequentially matches WhisperKit loading log messages to progress values.
