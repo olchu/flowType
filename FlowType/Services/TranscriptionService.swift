@@ -28,8 +28,26 @@ final class TranscriptionService {
     private var streamTask: Task<Void, Never>?
     private var streamTranscript = ""
     private var streamCoveredDuration: TimeInterval = 0
+    private let appleSpeechTranscriptionService = AppleSpeechTranscriptionService()
+
+    var requiresDownloadedModel: Bool {
+        #if arch(x86_64)
+        false
+        #else
+        true
+        #endif
+    }
+
+    var supportsStreamingTranscription: Bool {
+        #if arch(x86_64)
+        false
+        #else
+        true
+        #endif
+    }
 
     func prewarm(model: TranscriptionModel, onProgress: (@Sendable (Double, String) -> Void)? = nil) async throws {
+        guard requiresDownloadedModel else { return }
         _ = try await pipeline(for: model, shouldPrewarm: true, onProgress: onProgress)
     }
 
@@ -42,6 +60,9 @@ final class TranscriptionService {
             throw TranscriptionError.emptyRecording
         }
 
+        #if arch(x86_64)
+        return try await appleSpeechTranscriptionService.transcribe(audio, language: language)
+        #else
         let pipeline = try await pipeline(for: model, shouldPrewarm: false)
         let options = DecodingOptions(
             language: language.whisperKitCode,
@@ -66,6 +87,7 @@ final class TranscriptionService {
         }
 
         return transcript
+        #endif
     }
 
     func startStreamingTranscription(
@@ -76,6 +98,10 @@ final class TranscriptionService {
         await stopStreamingTranscription()
         streamTranscript = ""
         streamCoveredDuration = 0
+
+        guard supportsStreamingTranscription else {
+            return
+        }
 
         let pipeline = try await pipeline(for: model, shouldPrewarm: false)
         guard let tokenizer = pipeline.tokenizer else {

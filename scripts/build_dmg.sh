@@ -5,6 +5,12 @@ SCHEME="${SCHEME:-FlowType}"
 CONFIGURATION="${CONFIGURATION:-Release}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-/private/tmp/${SCHEME}-${CONFIGURATION}}"
 DIST_DIR="${DIST_DIR:-dist}"
+ARCHS_OVERRIDE="${ARCHS:-}"
+DESTINATION="platform=macOS"
+
+if [[ "$ARCHS_OVERRIDE" == "x86_64" || "$ARCHS_OVERRIDE" == "arm64" ]]; then
+  DESTINATION="platform=macOS,arch=$ARCHS_OVERRIDE"
+fi
 
 BUILD_SETTINGS="$(xcodebuild -scheme "$SCHEME" -configuration "$CONFIGURATION" -showBuildSettings)"
 PRODUCT_NAME="$(printf "%s\n" "$BUILD_SETTINGS" | awk -F'= ' '/ PRODUCT_NAME = / { print $2; exit }')"
@@ -25,12 +31,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-xcodebuild \
-  -scheme "$SCHEME" \
-  -destination platform=macOS \
-  -configuration "$CONFIGURATION" \
-  -derivedDataPath "$DERIVED_DATA_PATH" \
-  build
+XCODEBUILD_ARGS=(
+  -scheme "$SCHEME"
+  -destination "$DESTINATION"
+  -configuration "$CONFIGURATION"
+  -derivedDataPath "$DERIVED_DATA_PATH"
+)
+
+if [[ -n "$ARCHS_OVERRIDE" ]]; then
+  XCODEBUILD_ARGS+=(ARCHS="$ARCHS_OVERRIDE")
+fi
+
+xcodebuild "${XCODEBUILD_ARGS[@]}" build
 
 mkdir -p "$DIST_DIR"
 ditto "$APP_PATH" "$STAGING_DIR/$PRODUCT_NAME.app"

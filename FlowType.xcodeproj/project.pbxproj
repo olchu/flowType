@@ -274,6 +274,7 @@
 				INFOPLIST_KEY_LSUIElement = NO;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Flow Type needs microphone access to record local dictation.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Flow Type uses Apple Speech recognition on Intel Macs to transcribe dictation.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -312,6 +313,7 @@
 				INFOPLIST_KEY_LSUIElement = NO;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Flow Type needs microphone access to record local dictation.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Flow Type uses Apple Speech recognition on Intel Macs to transcribe dictation.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

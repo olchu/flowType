@@ -6,7 +6,7 @@
 - Приложение запускается как menu bar app без основного окна.
 - Добавлены `AppState`, модели, сервисы и отдельное окно `FlowType Settings`.
 - Реализован hold-to-record flow: `Fn` запускает запись, отпускание останавливает запись, запускает WhisperKit transcription и вставляет текст в активное приложение.
-- По умолчанию используется профиль `Balanced` с `Large v3 Turbo 632MB` (`openai_whisper-large-v3-v20240930_turbo_632MB`); доступны профили `Fast` (`Tiny`) и `Accurate` (`Large v3`).
+- В ветке `intel-light-models` профили перенастроены на легкие WhisperKit-модели для Intel Mac: `Fast` -> `Tiny` (`openai_whisper-tiny`), `Balanced` -> `Base` (`openai_whisper-base`), `Accurate` -> `Small` (`openai_whisper-small`).
 - Реализован global hold-to-record hotkey `Fn` через `CGEvent` event tap.
 - Менюбар очищен: в нем остались короткий статус, усредненный CPU/memory usage текущего процесса, кнопка настроек и выход.
 - Добавлены собственные иконки: `AppIcon` для приложения и template `statusbar` для status bar item.
@@ -219,7 +219,7 @@ FlowType/
 3. Добавить debug-метрики в лог или отдельный diagnostic summary: длительность аудио, количество samples, длина stream/tail transcript, выбранная модель, режим finalization.
 4. Проверить, сколько времени занимает tail decode при окнах 1.5, 2, 3 и 4 секунды; подобрать минимальное окно без потери последних слов.
 5. Оценить adaptive finalization: `streamOnly` для уверенно покрытого хвоста, `streamTail` только когда streaming отстает или финальный сегмент выглядит нестабильно.
-6. Проверить влияние модели: `Tiny`, `Large v3 Turbo 632MB`, `Large v3` на latency/качество для русского и английского.
+6. Проверить влияние модели: `Tiny`, `Base`, `Small` на latency/качество для русского и английского на Intel Mac.
 7. Убедиться, что prewarm действительно исключает повторную загрузку модели между диктовками.
 8. Отдельно проверить длинные диктовки: не растет ли задержка непропорционально длине записи.
 

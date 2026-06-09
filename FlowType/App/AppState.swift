@@ -84,7 +84,7 @@ final class AppState: ObservableObject {
             && hasAccessibilityPermission
             && isHotkeyRunning
             && !isModelWarmingUp
-            && modelStorageStates[settings.profile.model] == .downloaded
+            && isSelectedTranscriptionBackendReady
             && status != .error
     }
 
@@ -107,7 +107,7 @@ final class AppState: ObservableObject {
         (status == .ready || status == .error)
             && microphonePermission.isGranted
             && !isModelWarmingUp
-            && modelStorageStates[settings.profile.model] == .downloaded
+            && isSelectedTranscriptionBackendReady
     }
 
     var canStopRecording: Bool {
@@ -116,6 +116,14 @@ final class AppState: ObservableObject {
 
     var selectedModelStorageState: ModelStorageState {
         modelStorageStates[settings.profile.model] ?? .notDownloaded
+    }
+
+    var usesNativeSpeechTranscription: Bool {
+        !transcriptionService.requiresDownloadedModel
+    }
+
+    private var isSelectedTranscriptionBackendReady: Bool {
+        usesNativeSpeechTranscription || modelStorageStates[settings.profile.model] == .downloaded
     }
 
     func startDictation() {
@@ -141,6 +149,11 @@ final class AppState: ObservableObject {
         status = .recording
 
         streamingTranscriptionTask?.cancel()
+        guard transcriptionService.supportsStreamingTranscription else {
+            timing.mark("streaming skipped reason=unsupported-architecture")
+            return
+        }
+
         streamingTranscriptionTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -221,7 +234,7 @@ final class AppState: ObservableObject {
     ) async -> String {
         let streamingTranscript = streamingResult.transcript
 
-        guard recordedAudio.containsLikelySpeech else {
+        guard recordedAudio.containsLikelySpeech || usesNativeSpeechTranscription else {
             timing?.mark("speech gate skipped final decode")
             return streamingTranscript
         }
@@ -279,6 +292,9 @@ final class AppState: ObservableObject {
             return mergedTranscript
         } catch {
             timing?.mark("final decode failed fallback=stream error=\(error.localizedDescription)")
+            if streamingTranscript.isEmpty {
+                showError(error)
+            }
             return streamingTranscript
         }
     }
@@ -325,6 +341,11 @@ final class AppState: ObservableObject {
 
     func prewarmCurrentModel() {
         guard !isModelWarmingUp else { return }
+        guard transcriptionService.requiresDownloadedModel else {
+            modelLoadingProgress = 1
+            modelWarmupMessage = "Using Apple Speech on Intel."
+            return
+        }
 
         let model = settings.profile.model
         guard modelStorageStates[model] == .downloaded else {
@@ -460,6 +481,10 @@ final class AppState: ObservableObject {
 
     func showOnboardingIfNeeded() {
         guard !hasCompletedOnboarding else { return }
+        guard transcriptionService.requiresDownloadedModel else {
+            finishOnboarding()
+            return
+        }
         guard selectedModelStorageState != .downloaded else {
             finishOnboarding()
             return

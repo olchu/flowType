@@ -17,4 +17,15 @@ enum TranscriptionLanguage: String, CaseIterable, Codable, Identifiable {
             "en"
         }
     }
+
+    var speechLocale: Locale {
+        switch self {
+        case .auto:
+            .current
+        case .russian:
+            Locale(identifier: "ru_RU")
+        case .english:
+            Locale(identifier: "en_US")
+        }
+    }
 }

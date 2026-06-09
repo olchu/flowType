@@ -12,20 +12,20 @@ enum TranscriptionProfile: String, CaseIterable, Codable, Identifiable {
         case .fast:
             .tiny
         case .balanced:
-            .largeV3TurboCompact
+            .base
         case .accurate:
-            .largeV3
+            .small
         }
     }
 
     var detail: String {
         switch self {
         case .fast:
-            "Fast startup, lower accuracy"
+            "Lightest Intel-friendly model, lowest accuracy"
         case .balanced:
-            "Better accuracy, smaller Turbo model"
+            "Recommended Intel default, better accuracy without Large model cost"
         case .accurate:
-            "Best accuracy, slower startup"
+            "Best Intel-friendly accuracy, slower startup and transcription"
         }
     }
 }

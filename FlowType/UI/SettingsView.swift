@@ -264,6 +264,10 @@ struct SettingsView: View {
                     Text(model.whisperKitIdentifier)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    Text(model.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Spacer()
