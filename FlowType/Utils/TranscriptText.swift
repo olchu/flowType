@@ -98,6 +98,11 @@ enum TranscriptText {
             return exactMatches == 1
         case 2:
             return exactMatches == 2
+        case 3:
+            // Final-tail decoding often hallucinates a different lead-in word
+            // while repeating the same two-word ending, for example:
+            // "работает мой переводчик" -> "Вот мой переводчик".
+            return exactMatches >= 2
         default:
             return Double(exactMatches) / Double(pairs.count) >= 0.68
         }
