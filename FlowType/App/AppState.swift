@@ -20,9 +20,6 @@ final class AppState: ObservableObject {
     @Published var lastErrorMessage: String?
     @Published private(set) var isHotkeyRunning = false
     @Published private(set) var hotkeyStatusMessage = "Waiting for Accessibility permission."
-    @Published private(set) var translationStatusMessage = "Select text and press Option-Command-T."
-    @Published private(set) var translationModelState: ModelStorageState = .notDownloaded
-    @Published private(set) var translationModelProgress: Double = 0
     @Published private(set) var hasAccessibilityPermission = false
     @Published private(set) var microphonePermission: PermissionStatus = .unknown
     @Published private(set) var isModelWarmingUp = false {
@@ -44,15 +41,11 @@ final class AppState: ObservableObject {
     private let permissionsService = PermissionsService()
     private let transcriptionService = TranscriptionService()
     private let pasteService = PasteService()
-    private let selectedTextService = SelectedTextService()
-    private let translationService = TranslationService()
-    private let localAITranslationService = LocalAITranslationService()
     private let modelStorageService = ModelStorageService()
     private let settingsStorageService = SettingsStorageService()
     private let resourceMonitorService = ProcessResourceMonitorService()
     private let loginItemService = LoginItemService()
     private let floatingIndicatorController = FloatingIndicatorController()
-    private let translationPopoverController = TranslationPopoverController()
     private let finalTailTranscriptionSeconds: TimeInterval = 3
     private let minimumFinalTailRecordingDuration: TimeInterval = 0.9
     private lazy var onboardingWindowController = OnboardingWindowController(appState: self)
@@ -72,7 +65,6 @@ final class AppState: ObservableObject {
         refreshPermissions()
         refreshLaunchAtLoginStatus()
         refreshModelStorageStates()
-        refreshTranslationModelState()
         configureHotkey()
         prewarmCurrentModel()
         startResourceUsageMonitoring()
@@ -440,46 +432,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    func refreshTranslationModelState() {
-        translationModelState = localAITranslationService.isDownloaded
-            ? .downloaded
-            : .notDownloaded
-    }
-
-    func downloadTranslationModel() {
-        guard translationModelState != .downloading else { return }
-        translationModelState = .downloading
-        translationModelProgress = 0
-
-        Task {
-            do {
-                try await localAITranslationService.load { [weak self] progress in
-                    Task { @MainActor [weak self] in
-                        self?.translationModelProgress = progress
-                    }
-                }
-                translationModelProgress = 1
-                translationModelState = .downloaded
-                translationStatusMessage = "Local AI translator is ready."
-            } catch {
-                translationModelState = .error(error.localizedDescription)
-                translationStatusMessage = error.localizedDescription
-            }
-        }
-    }
-
-    func deleteTranslationModel() {
-        translationModelState = .deleting
-        do {
-            try localAITranslationService.delete()
-            translationModelProgress = 0
-            translationModelState = .notDownloaded
-            translationStatusMessage = "Local AI model was deleted."
-        } catch {
-            translationModelState = .error(error.localizedDescription)
-        }
-    }
-
     func refreshResourceUsage() {
         resourceUsage = resourceMonitorService.currentUsage()
     }
@@ -531,10 +483,6 @@ final class AppState: ObservableObject {
             self?.finishDictation()
         }
 
-        hotkeyService.onTranslate = { [weak self] in
-            self?.translateSelectedText()
-        }
-
         do {
             try hotkeyService.start()
             isHotkeyRunning = hotkeyService.isRunning
@@ -552,70 +500,6 @@ final class AppState: ObservableObject {
     private func showError(_ error: Error) {
         lastErrorMessage = error.localizedDescription
         status = .error
-    }
-
-    private func translateSelectedText() {
-        guard status != .recording, status != .transcribing else { return }
-
-        Task {
-            do {
-                let targetApplication = NSWorkspace.shared.frontmostApplication
-                let selection = try await selectedTextService.currentSelection(in: targetApplication)
-                let containsCyrillic = selection.text.unicodeScalars.contains {
-                    (0x0400...0x04FF).contains(Int($0.value))
-                }
-                let source = containsCyrillic ? "ru" : "en"
-                let target = containsCyrillic ? "en" : "ru"
-                translationStatusMessage = "Translating…"
-                translationPopoverController.show("Перевожу…", near: selection.bounds)
-                let translation = try await translatedText(
-                    selection.text,
-                    from: source,
-                    to: target
-                )
-
-                if selection.isEditable {
-                    await selectedTextService.prepareForReplacement(
-                        selection,
-                        in: targetApplication
-                    )
-                    do {
-                        try selectedTextService.replace(selection, with: translation)
-                    } catch {
-                        try await pasteService.pasteText(
-                            translation,
-                            restoreClipboard: settings.restoreClipboard,
-                            into: nil
-                        )
-                    }
-                    translationPopoverController.hide()
-                    translationStatusMessage = "Selected text was translated and replaced."
-                } else {
-                    translationPopoverController.show(translation, near: selection.bounds)
-                    translationStatusMessage = "Translation shown."
-                }
-            } catch {
-                translationStatusMessage = error.localizedDescription
-                lastErrorMessage = error.localizedDescription
-                translationPopoverController.show(
-                    "Не удалось перевести: \(error.localizedDescription)",
-                    near: nil
-                )
-            }
-        }
-    }
-
-    private func translatedText(_ text: String, from source: String, to target: String) async throws -> String {
-        if localAITranslationService.isDownloaded {
-            do {
-                translationStatusMessage = "Translating with local AI…"
-                return try await localAITranslationService.translate(text, from: source, to: target)
-            } catch {
-                translationStatusMessage = "Local AI failed; using system translation…"
-            }
-        }
-
-        return try await translationService.translate(text, from: source, to: target)
     }
 
     private func showPasteFallback(_ error: Error) {

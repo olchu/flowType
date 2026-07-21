@@ -16,7 +16,6 @@ final class HotkeyService {
 
     var onKeyDown: (() -> Void)?
     var onKeyUp: (() -> Void)?
-    var onTranslate: (() -> Void)?
     private(set) var isRunning = false
 
     private var eventTap: CFMachPort?
@@ -26,8 +25,7 @@ final class HotkeyService {
     func start() throws {
         guard eventTap == nil else { return }
 
-        let events = (1 << CGEventType.flagsChanged.rawValue)
-            | (1 << CGEventType.keyDown.rawValue)
+        let events = 1 << CGEventType.flagsChanged.rawValue
         let callback: CGEventTapCallBack = { _, type, event, userInfo in
             guard let userInfo else { return Unmanaged.passUnretained(event) }
 
@@ -74,23 +72,9 @@ final class HotkeyService {
         isPressed = false
         onKeyDown = nil
         onKeyUp = nil
-        onTranslate = nil
     }
 
     private func handleEvent(type: CGEventType, event: CGEvent) {
-        if type == .keyDown {
-            let translationModifiers: CGEventFlags = [.maskCommand, .maskAlternate]
-            let activeModifiers = event.flags.intersection([.maskCommand, .maskAlternate, .maskControl, .maskShift])
-            let tKeyCode: Int64 = 0x11
-
-            if event.getIntegerValueField(.keyboardEventKeycode) == tKeyCode,
-               activeModifiers == translationModifiers,
-               event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-                onTranslate?()
-            }
-            return
-        }
-
         guard type == .flagsChanged else { return }
 
         let isFnPressed = event.flags.contains(.maskSecondaryFn)
