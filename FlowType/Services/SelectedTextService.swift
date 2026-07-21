@@ -8,7 +8,9 @@ final class SelectedTextService {
         let text: String
         let bounds: CGRect?
         let isEditable: Bool
-        fileprivate let element: AXUIElement?
+        fileprivate let focusedElement: AXUIElement?
+        fileprivate let editableElement: AXUIElement?
+        fileprivate let selectedRange: AXValue?
     }
 
     enum SelectionError: LocalizedError {
@@ -25,7 +27,7 @@ final class SelectedTextService {
         }
     }
 
-    func currentSelection() async throws -> Selection {
+    func currentSelection(in application: NSRunningApplication?) async throws -> Selection {
         guard AXIsProcessTrusted() else {
             throw SelectionError.accessibilityPermissionMissing
         }
@@ -37,23 +39,48 @@ final class SelectedTextService {
                 text: text,
                 bounds: selectionBounds(in: element),
                 isEditable: editableElement != nil,
-                element: editableElement
+                focusedElement: element,
+                editableElement: editableElement,
+                selectedRange: selectedTextRange(in: element)
             )
         }
 
-        return try await selectionUsingClipboard(element: element)
+        return try await selectionUsingClipboard(element: element, application: application)
     }
 
     func replace(_ selection: Selection, with text: String) throws {
-        guard let element = selection.element else {
-            throw SelectionError.selectionUnavailable
+        if let element = selection.focusedElement, setSelectedText(text, in: element) {
+            return
         }
-        guard AXUIElementSetAttributeValue(
-            element,
-            kAXSelectedTextAttribute as CFString,
-            text as CFTypeRef
-        ) == .success else {
-            throw SelectionError.selectionUnavailable
+
+        if let element = selection.editableElement, setSelectedText(text, in: element) {
+            return
+        }
+
+        throw SelectionError.selectionUnavailable
+    }
+
+    func prepareForReplacement(
+        _ selection: Selection,
+        in application: NSRunningApplication?
+    ) async {
+        application?.activate(options: [])
+        try? await Task.sleep(for: .milliseconds(120))
+
+        if let focusedElement = selection.focusedElement {
+            AXUIElementSetAttributeValue(
+                focusedElement,
+                kAXFocusedAttribute as CFString,
+                kCFBooleanTrue
+            )
+            restoreSelectedRange(selection.selectedRange, in: focusedElement)
+        } else if let editableElement = selection.editableElement {
+            AXUIElementSetAttributeValue(
+                editableElement,
+                kAXFocusedAttribute as CFString,
+                kCFBooleanTrue
+            )
+            restoreSelectedRange(selection.selectedRange, in: editableElement)
         }
     }
 
@@ -71,7 +98,10 @@ final class SelectedTextService {
         return text
     }
 
-    private func selectionUsingClipboard(element: AXUIElement?) async throws -> Selection {
+    private func selectionUsingClipboard(
+        element: AXUIElement?,
+        application: NSRunningApplication?
+    ) async throws -> Selection {
         let pasteboard = NSPasteboard.general
         let snapshot = ClipboardSnapshot.capture(from: pasteboard)
         defer { snapshot.restore(to: pasteboard) }
@@ -87,12 +117,46 @@ final class SelectedTextService {
             throw SelectionError.selectionUnavailable
         }
 
+        let editableElement = element.flatMap(editableElement)
         return Selection(
             text: text,
             bounds: element.flatMap(selectionBounds),
-            isEditable: element.flatMap(editableElement) != nil,
-            element: element.flatMap(editableElement)
+            isEditable: editableElement != nil,
+            focusedElement: element,
+            editableElement: editableElement,
+            selectedRange: element.flatMap(selectedTextRange)
         )
+    }
+
+    private func setSelectedText(_ text: String, in element: AXUIElement) -> Bool {
+        AXUIElementSetAttributeValue(
+            element,
+            kAXSelectedTextAttribute as CFString,
+            text as CFTypeRef
+        ) == .success
+    }
+
+    private func restoreSelectedRange(_ range: AXValue?, in element: AXUIElement) {
+        guard let range else { return }
+        AXUIElementSetAttributeValue(
+            element,
+            kAXSelectedTextRangeAttribute as CFString,
+            range
+        )
+    }
+
+    private func selectedTextRange(in element: AXUIElement) -> AXValue? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element,
+            kAXSelectedTextRangeAttribute as CFString,
+            &value
+        ) == .success,
+        let value,
+        CFGetTypeID(value) == AXValueGetTypeID() else {
+            return nil
+        }
+        return (value as! AXValue)
     }
 
     private func sendCopyCommand() throws {

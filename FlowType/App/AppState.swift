@@ -560,7 +560,7 @@ final class AppState: ObservableObject {
         Task {
             do {
                 let targetApplication = NSWorkspace.shared.frontmostApplication
-                let selection = try await selectedTextService.currentSelection()
+                let selection = try await selectedTextService.currentSelection(in: targetApplication)
                 let containsCyrillic = selection.text.unicodeScalars.contains {
                     (0x0400...0x04FF).contains(Int($0.value))
                 }
@@ -575,13 +575,17 @@ final class AppState: ObservableObject {
                 )
 
                 if selection.isEditable {
+                    await selectedTextService.prepareForReplacement(
+                        selection,
+                        in: targetApplication
+                    )
                     do {
                         try selectedTextService.replace(selection, with: translation)
                     } catch {
                         try await pasteService.pasteText(
                             translation,
                             restoreClipboard: settings.restoreClipboard,
-                            into: targetApplication
+                            into: nil
                         )
                     }
                     translationPopoverController.hide()
