@@ -10,6 +10,7 @@ struct SettingsView: View {
                 applicationSection
                 permissionsSection
                 modelsSection
+                translationModelSection
                 transcriptionSection
                 indicatorSection
                 pasteSection
@@ -25,7 +26,7 @@ struct SettingsView: View {
                 .padding(.bottom, 10)
         }
         .padding()
-        .frame(minWidth: 640, idealWidth: 640, minHeight: 560)
+        .frame(minWidth: 640, idealWidth: 640, minHeight: 640)
     }
 
     private var appVersionText: String {
@@ -180,6 +181,64 @@ struct SettingsView: View {
         }
     }
 
+    private var translationModelSection: some View {
+        Section("Local AI Translation") {
+            LabeledContent("Model") {
+                Text(LocalAITranslationService.modelName)
+                    .foregroundStyle(.secondary)
+            }
+
+            LabeledContent("Status") {
+                Text(appState.translationModelState.label)
+                    .foregroundStyle(translationModelStatusColor)
+            }
+
+            if appState.translationModelState == .downloading {
+                ProgressView(value: appState.translationModelProgress)
+                Text("Downloading and loading: \(Int(appState.translationModelProgress * 100))%")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Runs entirely on this Mac. If the model is unavailable, Flow Type falls back to Apple Translation.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Button {
+                    appState.downloadTranslationModel()
+                } label: {
+                    Label(
+                        appState.translationModelState == .downloaded ? "Load Model" : "Download Model",
+                        systemImage: "arrow.down.circle"
+                    )
+                }
+                .disabled(appState.translationModelState == .downloading)
+
+                if appState.translationModelState == .downloaded {
+                    Button(role: .destructive) {
+                        appState.deleteTranslationModel()
+                    } label: {
+                        Label("Delete Model", systemImage: "trash")
+                    }
+                }
+            }
+        }
+    }
+
+    private var translationModelStatusColor: Color {
+        switch appState.translationModelState {
+        case .downloaded:
+            .green
+        case .downloading, .deleting:
+            .orange
+        case .error:
+            .red
+        case .notDownloaded:
+            .secondary
+        }
+    }
+
     private var pasteSection: some View {
         Section("Paste") {
             Toggle("Auto paste", isOn: $appState.settings.autoPaste)
@@ -220,6 +279,19 @@ struct SettingsView: View {
                 Text("Fn")
                     .foregroundStyle(.secondary)
             }
+
+            LabeledContent("Translate selection") {
+                Text("⌥⌘T")
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Editable text is translated and replaced. Read-only selections are translated in a nearby window. Russian and English direction is detected automatically.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text(appState.translationStatusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             LabeledContent("Listener") {
                 permissionText(appState.isHotkeyRunning ? "Running" : "Not running", granted: appState.isHotkeyRunning)

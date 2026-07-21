@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		B10000000000000000000001 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000003 /* WhisperKit */; };
+		B20000000000000000000001 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000003 /* MLXLLM */; };
+		B20000000000000000000004 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = B20000000000000000000005 /* MLXLMCommon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +29,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B20000000000000000000001 /* MLXLLM in Frameworks */,
+				B20000000000000000000004 /* MLXLMCommon in Frameworks */,
 				B10000000000000000000001 /* WhisperKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -71,6 +75,8 @@
 			name = FlowType;
 			packageProductDependencies = (
 				B10000000000000000000003 /* WhisperKit */,
+				B20000000000000000000003 /* MLXLLM */,
+				B20000000000000000000005 /* MLXLMCommon */,
 			);
 			productName = FlowType;
 			productReference = A532B5E62FC4EC6D003DCB29 /* FlowType.app */;
@@ -102,6 +108,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B10000000000000000000002 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
+				B20000000000000000000002 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A532B5E72FC4EC6D003DCB29 /* Products */;
@@ -188,7 +195,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -246,7 +253,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -362,6 +369,14 @@
 				minimumVersion = 1.0.0;
 			};
 		};
+		B20000000000000000000002 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-examples.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.25.8;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -369,6 +384,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B10000000000000000000002 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
 			productName = WhisperKit;
+		};
+		B20000000000000000000003 /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20000000000000000000002 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLLM;
+		};
+		B20000000000000000000005 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20000000000000000000002 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLMCommon;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

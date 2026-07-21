@@ -67,6 +67,10 @@ enum TranscriptText {
     nonisolated private static func comparableWord(_ word: String) -> String {
         word
             .lowercased()
+            // Whisper commonly alternates between е and ё across overlapping
+            // streaming and final-tail decodes. Treat them as the same word so
+            // a repeated tail is not appended as a second sentence.
+            .replacingOccurrences(of: "ё", with: "е")
             .trimmingCharacters(in: .punctuationCharacters.union(.symbols))
     }
 
