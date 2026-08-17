@@ -57,6 +57,32 @@ enum TranscriptText {
             return newTail.isEmpty ? base : "\(base) \(newTail)"
         }
 
+        // The tail sometimes hallucinates one extra lead-in filler word
+        // ("ну", "и", "вот"...) before repeating words that already ended
+        // base verbatim, which shifts every position by one and makes the
+        // aligned search above miss the overlap entirely - the whole repeated
+        // phrase would otherwise get appended a second time. Retry the same
+        // search with the tail's first word dropped.
+        let maxShiftedOverlap = min(baseWords.count, tailWords.count - 1, 24)
+        if maxShiftedOverlap >= 2 {
+            for overlap in stride(from: maxShiftedOverlap, through: 2, by: -1) {
+                let baseSuffix = Array(baseComparableWords.suffix(overlap))
+                let tailPrefix = Array(tailComparableWords.dropFirst().prefix(overlap))
+
+                guard overlaps(baseSuffix, tailPrefix) else { continue }
+
+                let newTailWords = Array(tailWords.dropFirst(1 + overlap))
+                let newTailComparableWords = Array(tailComparableWords.dropFirst(1 + overlap))
+
+                if isRedundantTail(newTailComparableWords, after: baseComparableWords, minimumWordCount: 2) {
+                    return base
+                }
+
+                let newTail = newTailWords.joined(separator: " ")
+                return newTail.isEmpty ? base : "\(base) \(newTail)"
+            }
+        }
+
         return "\(base) \(tail)"
     }
 

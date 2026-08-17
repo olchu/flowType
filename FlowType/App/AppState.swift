@@ -274,6 +274,19 @@ final class AppState: ObservableObject {
                 model: settings.profile.model
             )
             timing?.mark("tail decode completed chars=\(tailTranscript.count)")
+
+            // When the recording is no longer than the tail window, the "tail"
+            // is a clean decode of the entire dictation, not just its ending.
+            // Merging it with the streaming transcript of that same audio is
+            // what usually produces the duplicated-last-phrase bug on short
+            // dictations: both sides describe the same speech but rarely
+            // align word-for-word, so the merge keeps both. The tail decode
+            // alone is a strictly better result here, so skip the merge.
+            guard recordedAudio.duration > finalTailTranscriptionSeconds else {
+                timing?.mark("tail covers full recording, using tail transcript directly")
+                return tailTranscript
+            }
+
             let mergedTranscript = TranscriptText.merged(base: streamingTranscript, tail: tailTranscript)
             timing?.mark("merge completed chars=\(mergedTranscript.count)")
             return mergedTranscript
