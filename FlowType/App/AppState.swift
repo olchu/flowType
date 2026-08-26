@@ -287,9 +287,9 @@ final class AppState: ObservableObject {
                 return tailTranscript
             }
 
-            let mergedTranscript = TranscriptText.merged(base: streamingTranscript, tail: tailTranscript)
-            timing?.mark("merge completed chars=\(mergedTranscript.count)")
-            return mergedTranscript
+            let mergeResult = TranscriptText.mergedResult(base: streamingTranscript, tail: tailTranscript)
+            timing?.mark("merge completed chars=\(mergeResult.text.count) \(mergeResult.diagnosticDescription)")
+            return mergeResult.text
         } catch {
             timing?.mark("final decode failed fallback=stream error=\(error.localizedDescription)")
             return streamingTranscript
