@@ -139,6 +139,7 @@ final class AppState: ObservableObject {
 
         dictationTargetApplication = NSWorkspace.shared.frontmostApplication
         status = .recording
+        playFeedbackSound(.recordingStarted)
 
         streamingTranscriptionTask?.cancel()
         streamingTranscriptionTask = Task { [weak self] in
@@ -163,6 +164,7 @@ final class AppState: ObservableObject {
         audioLevel = 0
         smoothedAudioLevel = 0
         status = .transcribing
+        playFeedbackSound(.recordingStopped)
 
         Task {
             let timing = DictationTiming()
@@ -202,6 +204,7 @@ final class AppState: ObservableObject {
                         into: dictationTargetApplication
                     )
                     timing.mark("paste completed")
+                    playFeedbackSound(.pasted)
                 } catch {
                     showPasteFallback(error)
                     timing.finish("paste failed")
@@ -210,6 +213,7 @@ final class AppState: ObservableObject {
             }
 
             status = .ready
+            floatingIndicatorController.showPasted()
             timing.finish("ready")
         }
     }
@@ -538,6 +542,42 @@ final class AppState: ObservableObject {
             audioLevel: audioLevel,
             microphoneSensitivity: settings.microphoneSensitivity
         )
+    }
+
+    private func playFeedbackSound(_ feedback: FeedbackSound) {
+        guard let sound = NSSound(named: feedback.soundName) else {
+            NSSound.beep()
+            return
+        }
+
+        sound.volume = feedback.volume
+        sound.play()
+    }
+}
+
+private enum FeedbackSound {
+    case recordingStarted
+    case recordingStopped
+    case pasted
+
+    var soundName: NSSound.Name {
+        switch self {
+        case .recordingStarted:
+            .init("Tink")
+        case .recordingStopped:
+            .init("Pop")
+        case .pasted:
+            .init("Ping")
+        }
+    }
+
+    var volume: Float {
+        switch self {
+        case .recordingStarted, .recordingStopped:
+            0.35
+        case .pasted:
+            0.45
+        }
     }
 }
 

@@ -3,7 +3,12 @@ import SwiftUI
 
 @MainActor
 final class FloatingIndicatorModel: ObservableObject {
+    enum MomentaryStatus {
+        case pasted
+    }
+
     @Published var status: AppStatus = .ready
+    @Published var momentaryStatus: MomentaryStatus?
     @Published var isLoading = false
     @Published var audioLevel: Double = 0
     @Published var microphoneSensitivity: Double = 0.5
@@ -27,6 +32,7 @@ final class FloatingIndicatorModel: ObservableObject {
         startsNewPresentation: Bool
     ) {
         self.status = status
+        momentaryStatus = nil
         isLoading = false
         self.audioLevel = audioLevel
         self.microphoneSensitivity = microphoneSensitivity
@@ -38,7 +44,19 @@ final class FloatingIndicatorModel: ObservableObject {
 
     func updateLoading(startsNewPresentation: Bool) {
         status = .ready
+        momentaryStatus = nil
         isLoading = true
+        audioLevel = 0
+
+        if startsNewPresentation {
+            presentationID += 1
+        }
+    }
+
+    func updateMomentaryStatus(_ status: MomentaryStatus, startsNewPresentation: Bool) {
+        self.status = .ready
+        momentaryStatus = status
+        isLoading = false
         audioLevel = 0
 
         if startsNewPresentation {
@@ -83,6 +101,11 @@ struct FloatingIndicatorView: View {
         HStack(spacing: 12) {
             if model.isLoading {
                 LoadingStatusView()
+            } else if let momentaryStatus = model.momentaryStatus {
+                switch momentaryStatus {
+                case .pasted:
+                    PastedStatusView()
+                }
             } else {
                 switch model.status {
                 case .recording:
@@ -242,6 +265,20 @@ private struct LoadingStatusView: View {
     }
 }
 
+private struct PastedStatusView: View {
+    @State private var bounceID = false
+
+    var body: some View {
+        Image(systemName: "checkmark")
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .symbolEffect(.bounce, options: .speed(1.8), value: bounceID)
+            .frame(width: 30, height: 12)
+            .onAppear {
+                bounceID.toggle()
+            }
+    }
+}
+
 #Preview {
     VStack(spacing: 20) {
         FloatingIndicatorView(
@@ -262,6 +299,13 @@ private struct LoadingStatusView: View {
             model: {
                 let model = FloatingIndicatorModel()
                 model.updateLoading(startsNewPresentation: true)
+                return model
+            }()
+        )
+        FloatingIndicatorView(
+            model: {
+                let model = FloatingIndicatorModel()
+                model.updateMomentaryStatus(.pasted, startsNewPresentation: true)
                 return model
             }()
         )

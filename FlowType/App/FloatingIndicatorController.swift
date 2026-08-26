@@ -46,6 +46,21 @@ final class FloatingIndicatorController {
         }
     }
 
+    func showPasted() {
+        let shouldReplayPresentation = isDismissalInProgress
+        cancelPendingHide()
+
+        let panel = panel ?? makePanel()
+        let startsNewPresentation = !panel.isVisible || shouldReplayPresentation
+
+        model.updateMomentaryStatus(.pasted, startsNewPresentation: startsNewPresentation)
+
+        position(panel)
+        panel.orderFrontRegardless()
+        self.panel = panel
+        scheduleHide(after: .milliseconds(650))
+    }
+
     private func showLoading(forceNewPresentation: Bool = false) {
         let panel = panel ?? makePanel()
         let startsNewPresentation = !panel.isVisible || forceNewPresentation
@@ -112,8 +127,12 @@ final class FloatingIndicatorController {
     }
 
     private func scheduleHide() {
+        scheduleHide(after: .milliseconds(850))
+    }
+
+    private func scheduleHide(after delay: Duration) {
         hideTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(850))
+            try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 self?.beginDismissal(cancelExistingTask: false)
