@@ -21,7 +21,7 @@ enum TranscriptText {
     }
 
     nonisolated static func clean(_ text: String) -> String {
-        text.replacing(
+        let normalized = text.replacing(
             /<\|[^|]+\|>/,
             with: ""
         )
@@ -30,6 +30,8 @@ enum TranscriptText {
             with: " "
         )
         .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return removingLocalDuplicateWords(from: normalized)
     }
 
     nonisolated static func merged(_ pieces: [String]) -> String {
@@ -143,6 +145,178 @@ enum TranscriptText {
 
     nonisolated private static func words(in transcript: String) -> [String] {
         transcript.split(separator: " ").map(String.init)
+    }
+
+    nonisolated private static func removingLocalDuplicateWords(from transcript: String) -> String {
+        let tokens = words(in: transcript)
+        guard tokens.count > 1 else { return transcript }
+
+        var result: [String] = []
+        result.reserveCapacity(tokens.count)
+
+        var tokenIndex = tokens.startIndex
+        while tokenIndex < tokens.endIndex {
+            let token = tokens[tokenIndex]
+
+            if let echoRange = spokenNumberEchoRangeReplacement(startingAt: tokenIndex, in: tokens) {
+                result.append(token)
+                result.append(echoRange.replacement)
+                tokenIndex = echoRange.nextIndex
+                continue
+            }
+
+            if let previous = result.last, shouldDropAdjacentDuplicate(previous: previous, current: token) {
+                if let merged = tokenWithTransferredTerminalPunctuation(previous: previous, current: token) {
+                    result[result.count - 1] = merged
+                }
+                tokenIndex = tokens.index(after: tokenIndex)
+                continue
+            }
+
+            let noiseIndex = tokens.index(after: tokenIndex)
+            let duplicateIndex = tokens.index(noiseIndex, offsetBy: 1, limitedBy: tokens.endIndex)
+            if let duplicateIndex,
+               duplicateIndex < tokens.endIndex,
+               isNumericFragment(tokens[noiseIndex]),
+               shouldDropAdjacentDuplicate(previous: token, current: tokens[duplicateIndex]) {
+                result.append(token)
+                tokenIndex = tokens.index(after: duplicateIndex)
+                continue
+            }
+
+            result.append(token)
+            tokenIndex = tokens.index(after: tokenIndex)
+        }
+
+        return result.joined(separator: " ")
+    }
+
+    nonisolated private static func shouldDropAdjacentDuplicate(previous: String, current: String) -> Bool {
+        let previousComparable = comparableWord(previous)
+        let currentComparable = comparableWord(current)
+
+        guard previousComparable.count >= 5 && currentComparable.count >= 5 else {
+            return false
+        }
+
+        return wordsMatch(previousComparable, currentComparable)
+    }
+
+    nonisolated private static func tokenWithTransferredTerminalPunctuation(previous: String, current: String) -> String? {
+        guard !hasTerminalPunctuation(previous), let punctuation = current.last, isTerminalPunctuation(punctuation) else {
+            return nil
+        }
+
+        return "\(previous)\(punctuation)"
+    }
+
+    nonisolated private static func hasTerminalPunctuation(_ token: String) -> Bool {
+        guard let last = token.last else { return false }
+        return isTerminalPunctuation(last)
+    }
+
+    nonisolated private static func isTerminalPunctuation(_ character: Character) -> Bool {
+        character == "." || character == "!" || character == "?"
+    }
+
+    nonisolated private static func isNumericFragment(_ token: String) -> Bool {
+        let scalarView = token.unicodeScalars
+        let hasDigit = scalarView.contains { CharacterSet.decimalDigits.contains($0) }
+        let hasSeparator = scalarView.contains { scalar in
+            scalar == "." || scalar == "," || scalar == ":" || scalar == ";"
+        }
+
+        return hasDigit && hasSeparator
+    }
+
+    nonisolated private static func spokenNumberEchoRangeReplacement(
+        startingAt tokenIndex: [String].Index,
+        in tokens: [String]
+    ) -> (replacement: String, nextIndex: [String].Index)? {
+        let firstToken = tokens[tokenIndex]
+        guard let firstNumber = digit(forSpokenNumber: comparableWord(firstToken)) else {
+            return nil
+        }
+
+        let nextIndex = tokens.index(after: tokenIndex)
+        guard nextIndex < tokens.endIndex else { return nil }
+
+        let rangeIndex: [String].Index
+        if comparableWord(tokens[nextIndex]) == "это" {
+            rangeIndex = tokens.index(after: nextIndex)
+        } else {
+            rangeIndex = nextIndex
+        }
+
+        guard rangeIndex < tokens.endIndex else { return nil }
+        guard let range = smallNumericRange(in: tokens[rangeIndex]), range.lowerBound == firstNumber else {
+            return nil
+        }
+        guard let secondNumber = spokenNumber(forDigit: range.upperBound) else {
+            return nil
+        }
+
+        let replacement = if let punctuation = terminalPunctuation(in: tokens[rangeIndex]) {
+            "\(secondNumber)\(punctuation)"
+        } else {
+            secondNumber
+        }
+
+        return (replacement, tokens.index(after: rangeIndex))
+    }
+
+    nonisolated private static func smallNumericRange(in token: String) -> ClosedRange<Int>? {
+        let trimmed = token.trimmingCharacters(in: .punctuationCharacters)
+        let parts = trimmed.split { character in
+            character == "-" || character == "–" || character == "—"
+        }
+        guard parts.count == 2, let lower = Int(parts[0]), let upper = Int(parts[1]) else {
+            return nil
+        }
+        guard (0...10).contains(lower), (0...10).contains(upper), lower < upper else {
+            return nil
+        }
+
+        return lower...upper
+    }
+
+    nonisolated private static func terminalPunctuation(in token: String) -> Character? {
+        guard let last = token.last, isTerminalPunctuation(last) else { return nil }
+        return last
+    }
+
+    nonisolated private static func digit(forSpokenNumber word: String) -> Int? {
+        switch word {
+        case "ноль": 0
+        case "один", "одна", "одно": 1
+        case "два", "две": 2
+        case "три": 3
+        case "четыре": 4
+        case "пять": 5
+        case "шесть": 6
+        case "семь": 7
+        case "восемь": 8
+        case "девять": 9
+        case "десять": 10
+        default: nil
+        }
+    }
+
+    nonisolated private static func spokenNumber(forDigit digit: Int) -> String? {
+        switch digit {
+        case 0: "ноль"
+        case 1: "один"
+        case 2: "два"
+        case 3: "три"
+        case 4: "четыре"
+        case 5: "пять"
+        case 6: "шесть"
+        case 7: "семь"
+        case 8: "восемь"
+        case 9: "девять"
+        case 10: "десять"
+        default: nil
+        }
     }
 
     nonisolated private static func comparableWord(_ word: String) -> String {

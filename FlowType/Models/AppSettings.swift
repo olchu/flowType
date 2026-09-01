@@ -19,10 +19,30 @@ enum TranscriptionFinalizationMode: String, Codable, CaseIterable, Identifiable 
     }
 }
 
+enum TranscriptCleanupMode: String, Codable, CaseIterable, Identifiable {
+    case localRules = "Local rules"
+    case localLLM = "Local LLM"
+    case off = "Off"
+
+    var id: Self { self }
+
+    var detail: String {
+        switch self {
+        case .localRules:
+            "Fast built-in cleanup for duplicate fragments and Whisper artifacts."
+        case .localLLM:
+            "Runs local rules now; ready for an embedded MLX model when bundled."
+        case .off:
+            "Keeps only the basic WhisperKit text cleanup."
+        }
+    }
+}
+
 struct AppSettings: Codable, Equatable {
     var profile: TranscriptionProfile = .balanced
     var language: TranscriptionLanguage = .auto
     var finalizationMode: TranscriptionFinalizationMode = .streamTail
+    var cleanupMode: TranscriptCleanupMode = .localRules
     var autoPaste = true
     var restoreClipboard = true
     var microphoneSensitivity = 0.5
@@ -32,6 +52,7 @@ struct AppSettings: Codable, Equatable {
         case profile
         case language
         case finalizationMode
+        case cleanupMode
         case autoPaste
         case restoreClipboard
         case microphoneSensitivity
@@ -45,6 +66,7 @@ struct AppSettings: Codable, Equatable {
         profile = try container.decodeIfPresent(TranscriptionProfile.self, forKey: .profile) ?? .balanced
         language = try container.decodeIfPresent(TranscriptionLanguage.self, forKey: .language) ?? .auto
         finalizationMode = try container.decodeIfPresent(TranscriptionFinalizationMode.self, forKey: .finalizationMode) ?? .streamTail
+        cleanupMode = try container.decodeIfPresent(TranscriptCleanupMode.self, forKey: .cleanupMode) ?? .localRules
         autoPaste = try container.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? true
         restoreClipboard = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? true
         microphoneSensitivity = try container.decodeIfPresent(Double.self, forKey: .microphoneSensitivity) ?? 0.5

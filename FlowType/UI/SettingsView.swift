@@ -172,6 +172,35 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            Picker("Cleanup mode", selection: $appState.settings.cleanupMode) {
+                ForEach(TranscriptCleanupMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+
+            Text(appState.settings.cleanupMode.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if appState.settings.cleanupMode == .localLLM {
+                LabeledContent("Cleanup model") {
+                    if appState.isCleanupModelWarmingUp {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text(appState.cleanupModelMessage)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Button {
+                    appState.prewarmTranscriptCleanupModel()
+                } label: {
+                    Label("Load Cleanup Model", systemImage: "brain")
+                }
+                .disabled(appState.isCleanupModelWarmingUp)
+            }
+
             Toggle("Verify final tail on short recordings", isOn: $appState.settings.verifiesFinalTail)
 
             Text("Use Full recording as the baseline when comparing timing logs.")

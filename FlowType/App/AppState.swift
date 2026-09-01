@@ -14,6 +14,9 @@ final class AppState: ObservableObject {
         didSet {
             settingsStorageService.save(settings)
             updateFloatingIndicator()
+            if settings.cleanupMode == .localLLM && oldValue.cleanupMode != .localLLM {
+                prewarmTranscriptCleanupModel()
+            }
         }
     }
     @Published var lastTranscript = ""
@@ -35,11 +38,14 @@ final class AppState: ObservableObject {
     @Published private(set) var hasCompletedOnboarding = false
     @Published private(set) var isLaunchAtLoginEnabled = false
     @Published private(set) var launchAtLoginStatusMessage = "Disabled"
+    @Published private(set) var isCleanupModelWarmingUp = false
+    @Published private(set) var cleanupModelMessage = "Local LLM cleanup is not loaded."
 
     private let audioRecorder = AudioRecorderService()
     private let hotkeyService = HotkeyService()
     private let permissionsService = PermissionsService()
     private let transcriptionService = TranscriptionService()
+    private let transcriptCleanupService = TranscriptCleanupService()
     private let pasteService = PasteService()
     private let modelStorageService = ModelStorageService()
     private let settingsStorageService = SettingsStorageService()
@@ -67,6 +73,9 @@ final class AppState: ObservableObject {
         refreshModelStorageStates()
         configureHotkey()
         prewarmCurrentModel()
+        if settings.cleanupMode == .localLLM {
+            prewarmTranscriptCleanupModel()
+        }
         startResourceUsageMonitoring()
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
@@ -180,12 +189,18 @@ final class AppState: ObservableObject {
             streamingTranscriptionTask?.cancel()
             streamingTranscriptionTask = nil
 
-            let transcript = await finalTranscript(
+            let rawTranscript = await finalTranscript(
                 from: recordedAudio,
                 streamingResult: streamingResult,
                 timing: timing
             )
-            timing.mark("final transcript ready chars=\(transcript.count)")
+            timing.mark("final transcript ready chars=\(rawTranscript.count)")
+
+            let cleanupResult = await transcriptCleanupService.clean(rawTranscript, mode: settings.cleanupMode)
+            let transcript = cleanupResult.text
+            timing.mark(
+                "cleanup completed mode=\(settings.cleanupMode.rawValue) decision=\(cleanupResult.decision) rawChars=\(rawTranscript.count) chars=\(transcript.count)"
+            )
 
             guard !transcript.isEmpty else {
                 lastTranscript = ""
@@ -370,6 +385,29 @@ final class AppState: ObservableObject {
             }
 
             isModelWarmingUp = false
+        }
+    }
+
+    func prewarmTranscriptCleanupModel() {
+        guard settings.cleanupMode == .localLLM else {
+            cleanupModelMessage = "Local LLM cleanup is disabled."
+            return
+        }
+        guard !isCleanupModelWarmingUp else { return }
+
+        isCleanupModelWarmingUp = true
+        cleanupModelMessage = "Loading Qwen2.5 1.5B cleanup model..."
+
+        Task {
+            do {
+                try await transcriptCleanupService.prewarmLocalLLM()
+                cleanupModelMessage = "Qwen2.5 1.5B cleanup model is ready."
+            } catch {
+                cleanupModelMessage = "Could not load local cleanup model."
+                showError(error)
+            }
+
+            isCleanupModelWarmingUp = false
         }
     }
 
