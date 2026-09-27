@@ -217,26 +217,11 @@ private actor EmbeddedLocalLLMTranscriptCorrector {
             throw CorrectionError.modelLoading
         }
 
-        // A fresh session per dictation. ChatSession keeps the whole
-        // conversation, so reusing one fed every earlier dictation back to the
-        // model: old text leaked into new corrections and each call got slower.
-        let session = ChatSession(
-            container,
-            instructions: Self.instructions,
-            history: Self.examples,
-            generateParameters: GenerateParameters(
-                maxTokens: Self.maximumResponseTokens(for: transcript),
-                temperature: 0,
-                topP: 1,
-                topK: 1,
-                repetitionPenalty: 1,
-                repetitionContextSize: 64
-            ),
-            // Qwen3 and Gemma 4 would otherwise spend the token budget on a
-            // hidden reasoning block before the answer.
-            additionalContext: ["enable_thinking": false]
+        let response = try await Self.respond(
+            to: transcript,
+            with: container,
+            maxTokens: Self.maximumResponseTokens(for: transcript)
         )
-        let response = try await session.respond(to: Self.wrapped(transcript))
         let corrected = Self.cleanedModelResponse(response)
 
         guard !corrected.isEmpty else {
@@ -262,6 +247,10 @@ private actor EmbeddedLocalLLMTranscriptCorrector {
         loadTask = (model, task)
         do {
             let loaded = try await task.value
+            // The first generation compiles the Metal kernels, which took
+            // ~4 s on the first dictation after launch. Pay it here, before
+            // the model is marked ready, so no dictation waits for it.
+            _ = try? await Self.respond(to: "проверка связи", with: loaded, maxTokens: 4)
             // A newer selection may have replaced this load meanwhile.
             guard loadTask?.model == model else { return loaded }
             container = loaded
@@ -274,6 +263,33 @@ private actor EmbeddedLocalLLMTranscriptCorrector {
             }
             throw error
         }
+    }
+
+    private static func respond(
+        to transcript: String,
+        with container: ModelContainer,
+        maxTokens: Int
+    ) async throws -> String {
+        // A fresh session per call. ChatSession keeps the whole conversation,
+        // so reusing one fed every earlier dictation back to the model: old
+        // text leaked into new corrections and each call got slower.
+        let session = ChatSession(
+            container,
+            instructions: instructions,
+            history: examples,
+            generateParameters: GenerateParameters(
+                maxTokens: maxTokens,
+                temperature: 0,
+                topP: 1,
+                topK: 1,
+                repetitionPenalty: 1,
+                repetitionContextSize: 64
+            ),
+            // Qwen3 and Gemma 4 would otherwise spend the token budget on a
+            // hidden reasoning block before the answer.
+            additionalContext: ["enable_thinking": false]
+        )
+        return try await session.respond(to: wrapped(transcript))
     }
 
     private static func loadContainer(_ configuration: ModelConfiguration) async throws -> ModelContainer {

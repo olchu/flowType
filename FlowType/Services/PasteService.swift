@@ -71,7 +71,11 @@ final class PasteService {
         guard
             let application,
             !application.isTerminated,
-            application.bundleIdentifier != Bundle.main.bundleIdentifier
+            application.bundleIdentifier != Bundle.main.bundleIdentifier,
+            // Usually still frontmost: Flow Type never takes focus while
+            // dictating, and waiting for an activation that is not needed
+            // added 150 ms to every paste.
+            !application.isActive
         else {
             return
         }

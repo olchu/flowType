@@ -246,9 +246,11 @@ final class AppState: ObservableObject {
     ) async -> String {
         let streamingTranscript = streamingResult.transcript
 
-        // Silero decides whether there was any speech and where it is; silent
-        // edges are cut because Whisper invents text for silence. The energy
-        // check stands in while the VAD model is still loading.
+        // Silero decides whether there was any speech; the energy check stands
+        // in while the VAD model is still loading. Only the trailing silence is
+        // cut, and only for Whisper, which invents text for it. The start is
+        // never cut: Silero works in 256 ms steps, so its speech start can
+        // clip a first syllable, and dropping it would not speed anything up.
         let speechAudio: RecordedAudio
         switch await speechDetector.detect(in: recordedAudio) {
         case .noSpeech:
@@ -261,7 +263,9 @@ final class AppState: ObservableObject {
             }
             speechAudio = recordedAudio
         case .speech(let start, let end):
-            speechAudio = recordedAudio.slice(from: start, to: end)
+            speechAudio = settings.profile.model.engine == .parakeet
+                ? recordedAudio
+                : recordedAudio.prefix(seconds: end)
             timing?.mark(
                 "vad speech=\(Self.formattedSeconds(start))-\(Self.formattedSeconds(end))s of \(Self.formattedSeconds(recordedAudio.duration))s"
             )

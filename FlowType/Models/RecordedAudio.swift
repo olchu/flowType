@@ -45,10 +45,6 @@ nonisolated struct RecordedAudio: Sendable {
         )
     }
 
-    func slice(from start: TimeInterval, to end: TimeInterval) -> RecordedAudio {
-        suffix(from: start).prefix(seconds: end - max(0, start))
-    }
-
     func prefix(seconds: TimeInterval) -> RecordedAudio {
         guard seconds > 0, sampleRate > 0 else {
             return RecordedAudio(samples: [], sampleRate: sampleRate)

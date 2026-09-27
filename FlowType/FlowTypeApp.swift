@@ -36,9 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 let service = TranscriptCleanupService()
                 try? await service.prewarmLocalLLM(model: Self.cleanupModelArgument)
+                let start = ContinuousClock.now
                 let result = await service.clean(transcript, mode: .localLLM, model: Self.cleanupModelArgument)
+                let elapsed = start.duration(to: .now)
                 print(result.text)
                 print("decision=\(result.decision)")
+                print("cleanup=\(elapsed.formatted(.units(allowed: [.milliseconds])))")
                 NSApplication.shared.terminate(nil)
             }
             return
