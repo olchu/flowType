@@ -14,7 +14,8 @@ final class AppState: ObservableObject {
         didSet {
             settingsStorageService.save(settings)
             updateFloatingIndicator()
-            if settings.cleanupMode == .localLLM && oldValue.cleanupMode != .localLLM {
+            if settings.cleanupMode == .localLLM
+                && (oldValue.cleanupMode != .localLLM || oldValue.cleanupModel != settings.cleanupModel) {
                 prewarmTranscriptCleanupModel()
             }
         }
@@ -46,14 +47,14 @@ final class AppState: ObservableObject {
     private let permissionsService = PermissionsService()
     private let transcriptionService = TranscriptionService()
     private let transcriptCleanupService = TranscriptCleanupService()
+    private let speechDetector = SpeechDetectionService()
     private let pasteService = PasteService()
     private let modelStorageService = ModelStorageService()
     private let settingsStorageService = SettingsStorageService()
     private let resourceMonitorService = ProcessResourceMonitorService()
     private let loginItemService = LoginItemService()
     private let floatingIndicatorController = FloatingIndicatorController()
-    private let finalTailTranscriptionSeconds: TimeInterval = 3
-    private let minimumFinalTailRecordingDuration: TimeInterval = 0.9
+    private let finalTailSilenceMargin: TimeInterval = 0.5
     private lazy var onboardingWindowController = OnboardingWindowController(appState: self)
     private var dictationTargetApplication: NSRunningApplication?
     private var resourceUsageTask: Task<Void, Never>?
@@ -73,6 +74,7 @@ final class AppState: ObservableObject {
         refreshModelStorageStates()
         configureHotkey()
         prewarmCurrentModel()
+        Task { [speechDetector] in await speechDetector.prewarm() }
         if settings.cleanupMode == .localLLM {
             prewarmTranscriptCleanupModel()
         }
@@ -183,7 +185,7 @@ final class AppState: ObservableObject {
 
             let streamingResult = await transcriptionService.stopStreamingTranscription()
             timing.mark(
-                "stream stopped textChars=\(streamingResult.transcript.count) covered=\(Self.formattedSeconds(streamingResult.coveredDuration))s"
+                "stream stopped textChars=\(streamingResult.transcript.count) confirmedChars=\(streamingResult.confirmedTranscript.count) confirmedEnd=\(Self.formattedSeconds(streamingResult.confirmedEndSeconds))s streamAudio=\(Self.formattedSeconds(streamingResult.audio.duration))s"
             )
 
             streamingTranscriptionTask?.cancel()
@@ -196,10 +198,14 @@ final class AppState: ObservableObject {
             )
             timing.mark("final transcript ready chars=\(rawTranscript.count)")
 
-            let cleanupResult = await transcriptCleanupService.clean(rawTranscript, mode: settings.cleanupMode)
+            let cleanupResult = await transcriptCleanupService.clean(
+                rawTranscript,
+                mode: settings.cleanupMode,
+                model: settings.cleanupModel
+            )
             let transcript = cleanupResult.text
             timing.mark(
-                "cleanup completed mode=\(settings.cleanupMode.rawValue) decision=\(cleanupResult.decision) rawChars=\(rawTranscript.count) chars=\(transcript.count)"
+                "cleanup completed mode=\(settings.cleanupMode.rawValue) model=\(settings.cleanupModel.rawValue) decision=\(cleanupResult.decision) rawChars=\(rawTranscript.count) chars=\(transcript.count)"
             )
 
             guard !transcript.isEmpty else {
@@ -240,97 +246,127 @@ final class AppState: ObservableObject {
     ) async -> String {
         let streamingTranscript = streamingResult.transcript
 
-        guard recordedAudio.containsLikelySpeech else {
-            timing?.mark("speech gate skipped final decode")
-            return streamingTranscript
+        // Silero decides whether there was any speech and where it is; silent
+        // edges are cut because Whisper invents text for silence. The energy
+        // check stands in while the VAD model is still loading.
+        let speechAudio: RecordedAudio
+        switch await speechDetector.detect(in: recordedAudio) {
+        case .noSpeech:
+            timing?.mark("speech gate skipped final decode vad=silero")
+            return ""
+        case .unavailable:
+            guard recordedAudio.containsLikelySpeech else {
+                timing?.mark("speech gate skipped final decode vad=energy")
+                return ""
+            }
+            speechAudio = recordedAudio
+        case .speech(let start, let end):
+            speechAudio = recordedAudio.slice(from: start, to: end)
+            timing?.mark(
+                "vad speech=\(Self.formattedSeconds(start))-\(Self.formattedSeconds(end))s of \(Self.formattedSeconds(recordedAudio.duration))s"
+            )
         }
 
         do {
             timing?.mark("finalization mode=\(settings.finalizationMode.rawValue)")
 
+            if !settings.profile.model.supportsStreaming {
+                return try await fullTranscript(of: speechAudio, reason: "no-stream-model", timing: timing)
+            }
+
             guard !streamingTranscript.isEmpty else {
-                timing?.mark("full decode started reason=empty-stream")
-                let transcript = try await transcriptionService.transcribe(
-                    recordedAudio,
-                    language: settings.language,
-                    model: settings.profile.model
-                )
-                timing?.mark("full decode completed chars=\(transcript.count)")
-                return transcript
+                return try await fullTranscript(of: speechAudio, reason: "empty-stream", timing: timing)
             }
 
             switch settings.finalizationMode {
             case .fullRecording:
-                timing?.mark("full decode started reason=baseline-mode")
-                let transcript = try await transcriptionService.transcribe(
-                    recordedAudio,
-                    language: settings.language,
-                    model: settings.profile.model
-                )
-                timing?.mark("full decode completed chars=\(transcript.count)")
-                return transcript
+                return try await fullTranscript(of: speechAudio, reason: "baseline-mode", timing: timing)
 
             case .streamOnly:
                 timing?.mark("final decode skipped reason=stream-only")
                 return streamingTranscript
 
             case .streamTail:
-                break
+                return try await streamTailTranscript(
+                    speechAudio: speechAudio,
+                    streamingResult: streamingResult,
+                    timing: timing
+                )
             }
-
-            guard shouldVerifyFinalTail(
-                recordedAudio: recordedAudio,
-                streamingResult: streamingResult
-            ) else {
-                timing?.mark("tail decode skipped")
-                return streamingTranscript
-            }
-
-            timing?.mark("tail decode started window=\(Self.formattedSeconds(finalTailTranscriptionSeconds))s")
-            let tailTranscript = try await transcriptionService.transcribe(
-                recordedAudio.suffix(seconds: finalTailTranscriptionSeconds),
-                language: settings.language,
-                model: settings.profile.model
-            )
-            timing?.mark("tail decode completed chars=\(tailTranscript.count)")
-
-            // When the recording is no longer than the tail window, the "tail"
-            // is a clean decode of the entire dictation, not just its ending.
-            // Merging it with the streaming transcript of that same audio is
-            // what usually produces the duplicated-last-phrase bug on short
-            // dictations: both sides describe the same speech but rarely
-            // align word-for-word, so the merge keeps both. The tail decode
-            // alone is a strictly better result here, so skip the merge.
-            guard recordedAudio.duration > finalTailTranscriptionSeconds else {
-                timing?.mark("tail covers full recording, using tail transcript directly")
-                return tailTranscript
-            }
-
-            let mergeResult = TranscriptText.mergedResult(base: streamingTranscript, tail: tailTranscript)
-            timing?.mark("merge completed chars=\(mergeResult.text.count) \(mergeResult.diagnosticDescription)")
-            return mergeResult.text
         } catch {
             timing?.mark("final decode failed fallback=stream error=\(error.localizedDescription)")
             return streamingTranscript
         }
     }
 
-    private func shouldVerifyFinalTail(
-        recordedAudio: RecordedAudio,
-        streamingResult: TranscriptionService.StreamingTranscriptionResult
-    ) -> Bool {
-        guard recordedAudio.duration >= minimumFinalTailRecordingDuration else {
-            return false
+    private func fullTranscript(of audio: RecordedAudio, reason: String, timing: DictationTiming?) async throws -> String {
+        timing?.mark("full decode started reason=\(reason) window=\(Self.formattedSeconds(audio.duration))s")
+        let transcript = try await transcriptionService.transcribe(
+            audio,
+            language: settings.language,
+            model: settings.profile.model
+        )
+        timing?.mark("full decode completed chars=\(transcript.count)")
+        return transcript
+    }
+
+    /// Keeps the text WhisperKit already confirmed and decodes only the audio
+    /// after the last confirmed segment. That boundary is a segment edge on the
+    /// stream's own timeline, so the tail never starts mid-word and its text is
+    /// appended as is. A fixed-length suffix of the recording used to cut words
+    /// in half ("Убыстрить" -> "Быстрится"), and fuzzy merging then failed to
+    /// recognize the garbled repeat and appended it a second time.
+    private func streamTailTranscript(
+        speechAudio: RecordedAudio,
+        streamingResult: TranscriptionService.StreamingTranscriptionResult,
+        timing: DictationTiming?
+    ) async throws -> String {
+        let confirmedTranscript = streamingResult.confirmedTranscript
+
+        guard !confirmedTranscript.isEmpty, !streamingResult.audio.isEmpty else {
+            // Nothing confirmed yet: one decode of the whole recording is as
+            // fast as a tail decode (the encoder always sees a 30 s window)
+            // and the recorder started before the stream, so it misses nothing.
+            return try await fullTranscript(of: speechAudio, reason: "nothing-confirmed", timing: timing)
         }
 
-        if settings.verifiesFinalTail {
-            return true
+        // Trailing silence is where Whisper hallucinates, so stop shortly after
+        // the last speech. The tail start stays on the segment boundary.
+        let tailAudio = streamingResult.unconfirmedAudio
+        let speechEnd: TimeInterval
+        switch await speechDetector.detect(in: tailAudio) {
+        case .noSpeech:
+            timing?.mark("tail decode skipped reason=no-speech vad=silero tail=\(Self.formattedSeconds(tailAudio.duration))s")
+            return confirmedTranscript
+        case .speech(_, let end):
+            speechEnd = end
+        case .unavailable:
+            guard let energySpeechEnd = tailAudio.lastSpeechEnd(noiseFloor: streamingResult.audio.noiseFloor) else {
+                timing?.mark("tail decode skipped reason=no-speech vad=energy tail=\(Self.formattedSeconds(tailAudio.duration))s")
+                return confirmedTranscript
+            }
+            // The margin keeps quiet word endings the energy check misses.
+            speechEnd = energySpeechEnd + finalTailSilenceMargin
         }
 
-        // WhisperKit's streaming timestamps can say the tail is covered before
-        // the last words are actually present in the emitted text, so verify a
-        // short final window by default.
-        return !streamingResult.transcript.isEmpty
+        let trimmedTail = tailAudio.prefix(seconds: speechEnd)
+        timing?.mark(
+            "tail decode started from=\(Self.formattedSeconds(streamingResult.confirmedEndSeconds))s window=\(Self.formattedSeconds(trimmedTail.duration))s"
+        )
+
+        let tailTranscript: String
+        do {
+            tailTranscript = try await transcriptionService.transcribe(
+                trimmedTail,
+                language: settings.language,
+                model: settings.profile.model
+            )
+        } catch TranscriptionService.TranscriptionError.emptyTranscript {
+            tailTranscript = ""
+        }
+        timing?.mark("tail decode completed chars=\(tailTranscript.count)")
+
+        return TranscriptText.joined(prefix: confirmedTranscript, continuation: tailTranscript)
     }
 
     private func updateAudioLevel(_ level: Double) {
@@ -393,17 +429,19 @@ final class AppState: ObservableObject {
             cleanupModelMessage = "Local LLM cleanup is disabled."
             return
         }
-        guard !isCleanupModelWarmingUp else { return }
-
+        let model = settings.cleanupModel
         isCleanupModelWarmingUp = true
-        cleanupModelMessage = "Loading Qwen2.5 1.5B cleanup model..."
+        cleanupModelMessage = "Loading \(model.rawValue) (downloads on first use)..."
 
         Task {
             do {
-                try await transcriptCleanupService.prewarmLocalLLM()
-                cleanupModelMessage = "Qwen2.5 1.5B cleanup model is ready."
+                try await transcriptCleanupService.prewarmLocalLLM(model: model)
+                // A newer selection may have started loading meanwhile.
+                guard settings.cleanupModel == model else { return }
+                cleanupModelMessage = "\(model.rawValue) is ready."
             } catch {
-                cleanupModelMessage = "Could not load local cleanup model."
+                guard settings.cleanupModel == model else { return }
+                cleanupModelMessage = "Could not load \(model.rawValue)."
                 showError(error)
             }
 
@@ -443,7 +481,7 @@ final class AppState: ObservableObject {
         Task {
             do {
                 try modelStorageService.delete(model)
-                transcriptionService.resetLoadedModel(ifMatching: model)
+                await transcriptionService.resetLoadedModel(ifMatching: model)
                 modelStorageStates[model] = .notDownloaded
                 if model == settings.profile.model {
                     isModelWarmingUp = false

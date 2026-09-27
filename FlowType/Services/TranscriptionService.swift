@@ -4,8 +4,23 @@ import WhisperKit
 @MainActor
 final class TranscriptionService {
     struct StreamingTranscriptionResult {
+        /// Everything the stream produced, including unconfirmed text.
         let transcript: String
-        let coveredDuration: TimeInterval
+        /// Text of the segments WhisperKit confirmed; it no longer changes.
+        let confirmedTranscript: String
+        /// Where the confirmed text ends on the stream audio timeline.
+        let confirmedEndSeconds: TimeInterval
+        /// Microphone audio the stream decoded, on the same timeline as the
+        /// segment timestamps.
+        let audio: RecordedAudio
+
+        /// Audio that the confirmed text does not cover yet. It starts on a
+        /// Whisper segment boundary, so decoding it never starts mid-word and
+        /// its text can be appended to `confirmedTranscript` without fuzzy
+        /// overlap matching.
+        var unconfirmedAudio: RecordedAudio {
+            audio.suffix(from: confirmedEndSeconds)
+        }
     }
 
     enum TranscriptionError: LocalizedError {
@@ -17,7 +32,7 @@ final class TranscriptionService {
             case .emptyRecording:
                 "No audio was captured."
             case .emptyTranscript:
-                "WhisperKit did not return any text."
+                "The speech model did not return any text."
             }
         }
     }
@@ -27,10 +42,22 @@ final class TranscriptionService {
     private var streamTranscriber: AudioStreamTranscriber?
     private var streamTask: Task<Void, Never>?
     private var streamTranscript = ""
-    private var streamCoveredDuration: TimeInterval = 0
+    private let streamSnapshot = StreamSnapshotStore()
+    private let parakeet = ParakeetTranscriber()
 
     func prewarm(model: TranscriptionModel, onProgress: (@Sendable (Double, String) -> Void)? = nil) async throws {
-        _ = try await pipeline(for: model, shouldPrewarm: true, onProgress: onProgress)
+        switch model.engine {
+        case .whisperKit:
+            // Only one speech model stays in memory.
+            await parakeet.unload()
+            _ = try await pipeline(for: model, shouldPrewarm: true, onProgress: onProgress)
+        case .parakeet:
+            pipeline = nil
+            loadedModel = nil
+            onProgress?(0.5, "Loading Parakeet...")
+            try await parakeet.prewarm()
+            onProgress?(1, "Model ready")
+        }
     }
 
     func transcribe(
@@ -40,6 +67,19 @@ final class TranscriptionService {
     ) async throws -> String {
         guard !audio.isEmpty else {
             throw TranscriptionError.emptyRecording
+        }
+
+        if model.engine == .parakeet {
+            let transcript = TranscriptText.clean(
+                try await parakeet.transcribe(
+                    audio.samples(resampledTo: ParakeetTranscriber.sampleRate),
+                    languageCode: language.whisperKitCode
+                )
+            )
+            guard !transcript.isEmpty else {
+                throw TranscriptionError.emptyTranscript
+            }
+            return transcript
         }
 
         let pipeline = try await pipeline(for: model, shouldPrewarm: false)
@@ -54,12 +94,7 @@ final class TranscriptionService {
             decodeOptions: options
         )
 
-        let transcript = results
-            .map(\.text)
-            .map(TranscriptText.clean)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let transcript = Self.text(of: results.flatMap(\.segments))
 
         guard !transcript.isEmpty else {
             throw TranscriptionError.emptyTranscript
@@ -75,7 +110,9 @@ final class TranscriptionService {
     ) async throws {
         await stopStreamingTranscription()
         streamTranscript = ""
-        streamCoveredDuration = 0
+        streamSnapshot.reset()
+
+        guard model.supportsStreaming else { return }
 
         let pipeline = try await pipeline(for: model, shouldPrewarm: false)
         guard let tokenizer = pipeline.tokenizer else {
@@ -99,12 +136,16 @@ final class TranscriptionService {
             audioProcessor: pipeline.audioProcessor,
             decodingOptions: options,
             requiredSegmentsForConfirmation: 1
-        ) { [weak self] _, newState in
+        ) { [weak self, streamSnapshot] _, newState in
+            // Stored synchronously so the snapshot read at stop time is never
+            // behind a pending main-actor hop.
+            streamSnapshot.update(
+                confirmedSegments: newState.confirmedSegments,
+                confirmedEndSeconds: TimeInterval(newState.lastConfirmedSegmentEndSeconds)
+            )
             let transcript = Self.transcript(from: newState)
-            let coveredDuration = Self.coveredDuration(from: newState)
             Task { @MainActor [weak self] in
                 self?.streamTranscript = transcript
-                self?.streamCoveredDuration = coveredDuration
                 onTranscriptChanged(transcript)
             }
         }
@@ -123,17 +164,29 @@ final class TranscriptionService {
 
     @discardableResult
     func stopStreamingTranscription() async -> StreamingTranscriptionResult {
+        // Without a live stream the audio processor still holds the previous
+        // dictation's samples, which must not be mistaken for this one.
+        let hadStream = streamTranscriber != nil
         await streamTranscriber?.stopStreamTranscription()
+        // Everything after the last confirmed segment is decoded again when the
+        // dictation is finalized, so waiting for an in-flight streaming pass
+        // would only delay the paste.
+        streamTask?.cancel()
         await streamTask?.value
         streamTask = nil
         streamTranscriber = nil
+
         let transcript = streamTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-        let coveredDuration = streamCoveredDuration
+        let snapshot = streamSnapshot.current()
+        let audioSamples = hadStream ? pipeline.map { Array($0.audioProcessor.audioSamples) } ?? [] : []
         streamTranscript = ""
-        streamCoveredDuration = 0
+        streamSnapshot.reset()
+
         return StreamingTranscriptionResult(
             transcript: transcript,
-            coveredDuration: coveredDuration
+            confirmedTranscript: Self.text(of: snapshot.confirmedSegments),
+            confirmedEndSeconds: snapshot.confirmedEndSeconds,
+            audio: RecordedAudio(samples: audioSamples, sampleRate: Double(WhisperKit.sampleRate))
         )
     }
 
@@ -163,7 +216,7 @@ final class TranscriptionService {
         }
 
         let config = WhisperKitConfig(
-            model: model.whisperKitIdentifier,
+            model: model.whisperKitIdentifier ?? "",
             modelRepo: TranscriptionModel.repository,
             verbose: onProgress != nil,
             logLevel: .debug,
@@ -178,29 +231,59 @@ final class TranscriptionService {
         return pipeline
     }
 
-    func resetLoadedModel(ifMatching model: TranscriptionModel) {
+    func resetLoadedModel(ifMatching model: TranscriptionModel) async {
+        if model.engine == .parakeet {
+            await parakeet.unload()
+        }
         guard loadedModel == model else { return }
         pipeline = nil
         loadedModel = nil
     }
 
     nonisolated private static func transcript(from state: AudioStreamTranscriber.State) -> String {
-        let confirmedText = state.confirmedSegments.map(\.text)
-        let unconfirmedText = state.unconfirmedSegments.map(\.text)
+        let segmentText = (state.confirmedSegments + state.unconfirmedSegments)
+            .map(\.text)
+            .filter { !TranscriptText.isLikelyHallucination($0) }
         let currentText = state.currentText == "Waiting for speech..." ? "" : state.currentText
 
-        return TranscriptText.merged(confirmedText + unconfirmedText + [currentText])
+        return TranscriptText.merged(segmentText + [currentText])
     }
 
-    nonisolated private static func coveredDuration(from state: AudioStreamTranscriber.State) -> TimeInterval {
-        let segmentEnds = (state.confirmedSegments + state.unconfirmedSegments).map(\.end)
-        guard let end = segmentEnds.max() else {
-            return TimeInterval(state.lastConfirmedSegmentEndSeconds)
+    nonisolated private static func text(of segments: [TranscriptionSegment]) -> String {
+        segments
+            .map(\.text)
+            .filter { !TranscriptText.isLikelyHallucination($0) }
+            .map(TranscriptText.clean)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+}
+
+// Latest confirmed stream state. Written from WhisperKit's state callback,
+// read on the main actor when the dictation stops.
+private final class StreamSnapshotStore: @unchecked Sendable {
+    nonisolated struct Snapshot: Sendable {
+        var confirmedSegments: [TranscriptionSegment] = []
+        var confirmedEndSeconds: TimeInterval = 0
+    }
+
+    nonisolated(unsafe) private var snapshot = Snapshot()
+    private let lock = NSLock()
+
+    nonisolated func update(confirmedSegments: [TranscriptionSegment], confirmedEndSeconds: TimeInterval) {
+        lock.withLock {
+            snapshot = Snapshot(confirmedSegments: confirmedSegments, confirmedEndSeconds: confirmedEndSeconds)
         }
-
-        return TimeInterval(max(end, state.lastConfirmedSegmentEndSeconds))
     }
 
+    nonisolated func current() -> Snapshot {
+        lock.withLock { snapshot }
+    }
+
+    nonisolated func reset() {
+        lock.withLock { snapshot = Snapshot() }
+    }
 }
 
 // Sequentially matches WhisperKit loading log messages to progress values.

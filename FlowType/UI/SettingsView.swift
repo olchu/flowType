@@ -162,15 +162,17 @@ struct SettingsView: View {
                 }
             }
 
-            Picker("Finalization mode", selection: $appState.settings.finalizationMode) {
-                ForEach(TranscriptionFinalizationMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+            if appState.settings.profile.model.supportsStreaming {
+                Picker("Finalization mode", selection: $appState.settings.finalizationMode) {
+                    ForEach(TranscriptionFinalizationMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
                 }
-            }
 
-            Text(appState.settings.finalizationMode.detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                Text(appState.settings.finalizationMode.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Picker("Cleanup mode", selection: $appState.settings.cleanupMode) {
                 ForEach(TranscriptCleanupMode.allCases) { mode in
@@ -183,7 +185,17 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
 
             if appState.settings.cleanupMode == .localLLM {
-                LabeledContent("Cleanup model") {
+                Picker("Cleanup model", selection: $appState.settings.cleanupModel) {
+                    ForEach(CleanupLLMModel.allCases) { model in
+                        Text(model.rawValue).tag(model)
+                    }
+                }
+
+                Text(appState.settings.cleanupModel.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                LabeledContent("Cleanup model status") {
                     if appState.isCleanupModelWarmingUp {
                         ProgressView()
                             .controlSize(.small)
@@ -200,8 +212,6 @@ struct SettingsView: View {
                 }
                 .disabled(appState.isCleanupModelWarmingUp)
             }
-
-            Toggle("Verify final tail on short recordings", isOn: $appState.settings.verifiesFinalTail)
 
             Text("Use Full recording as the baseline when comparing timing logs.")
                 .font(.caption)
@@ -290,7 +300,7 @@ struct SettingsView: View {
                     Text(model.rawValue)
                         .font(.headline)
 
-                    Text(model.whisperKitIdentifier)
+                    Text(model.whisperKitIdentifier ?? "FluidInference/parakeet-ultra-coreml")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

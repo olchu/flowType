@@ -34,6 +34,66 @@ enum TranscriptText {
         return removingLocalDuplicateWords(from: normalized)
     }
 
+    /// Joins text decoded from adjacent, non-overlapping audio ranges. Unlike
+    /// `merged`, it never drops words on a fuzzy match: only an exact repeat
+    /// of at least two words across the boundary is removed.
+    nonisolated static func joined(prefix: String, continuation: String) -> String {
+        let prefix = clean(prefix)
+        let continuation = clean(continuation)
+        guard !prefix.isEmpty else { return continuation }
+        guard !continuation.isEmpty else { return prefix }
+
+        let prefixWords = words(in: prefix).map(comparableWord)
+        let continuationWords = words(in: continuation)
+        let continuationComparableWords = continuationWords.map(comparableWord)
+        let maximumOverlap = min(8, prefixWords.count, continuationWords.count)
+
+        if maximumOverlap >= 2 {
+            for overlap in stride(from: maximumOverlap, through: 2, by: -1)
+            where Array(prefixWords.suffix(overlap)) == Array(continuationComparableWords.prefix(overlap)) {
+                let rest = continuationWords.dropFirst(overlap).joined(separator: " ")
+                return rest.isEmpty ? prefix : "\(prefix) \(rest)"
+            }
+        }
+
+        return "\(prefix) \(continuation)"
+    }
+
+    /// Whisper fills silence and noise with phrases from video subtitles.
+    /// A segment consisting of one of them carries no dictated speech.
+    nonisolated static func isLikelyHallucination(_ segment: String) -> Bool {
+        let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        if trimmed.wholeMatch(of: /[\[\(\*♪][^\]\)\*♪]*[\]\)\*♪]/) != nil {
+            return true
+        }
+
+        let normalizedWords = words(in: clean(trimmed)).map(comparableWord).filter { !$0.isEmpty }
+        let normalized = normalizedWords.joined(separator: " ")
+
+        return hallucinationPhrases.contains { phrase in
+            normalized.contains(phrase)
+                && normalizedWords.count <= phrase.split(separator: " ").count + 3
+        }
+    }
+
+    nonisolated private static let hallucinationPhrases = [
+        "продолжение следует",
+        "субтитры сделал",
+        "субтитры создавал",
+        "субтитры подготовил",
+        "редактор субтитров",
+        "субтитры by",
+        "dimatorzok",
+        "спасибо за просмотр",
+        "подписывайтесь на канал",
+        "ставьте лайки",
+        "thank you for watching",
+        "thanks for watching",
+        "subtitles by"
+    ]
+
     nonisolated static func merged(_ pieces: [String]) -> String {
         pieces.reduce("") { partialResult, piece in
             mergedResult(base: partialResult, tail: piece).text
@@ -437,6 +497,12 @@ enum TranscriptText {
         }
 
         return previousRow.last ?? 0
+    }
+
+    /// Case-, punctuation- and ё-insensitive word comparison that tolerates the
+    /// small inflection differences Whisper produces between decodes.
+    nonisolated static func isSameWord(_ lhs: String, _ rhs: String) -> Bool {
+        wordsMatch(comparableWord(lhs), comparableWord(rhs))
     }
 
     nonisolated private static func wordsMatch(_ lhs: String, _ rhs: String) -> Bool {

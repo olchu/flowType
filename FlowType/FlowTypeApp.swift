@@ -34,7 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let transcript = Self.cleanupTranscriptArgument {
             Task {
-                let result = await TranscriptCleanupService().clean(transcript, mode: .localLLM)
+                let service = TranscriptCleanupService()
+                try? await service.prewarmLocalLLM(model: Self.cleanupModelArgument)
+                let result = await service.clean(transcript, mode: .localLLM, model: Self.cleanupModelArgument)
                 print(result.text)
                 print("decision=\(result.decision)")
                 NSApplication.shared.terminate(nil)
@@ -46,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task {
             do {
-                try await TranscriptCleanupService().prewarmLocalLLM()
+                try await TranscriptCleanupService().prewarmLocalLLM(model: Self.cleanupModelArgument)
                 print("Cleanup model is ready.")
                 NSApplication.shared.terminate(nil)
             } catch {
@@ -57,8 +59,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static var cleanupTranscriptArgument: String? {
+        argument(after: "--cleanup-transcript")
+    }
+
+    /// `--cleanup-model "Qwen3 4B"`; defaults to the saved setting.
+    private static var cleanupModelArgument: CleanupLLMModel {
+        argument(after: "--cleanup-model").flatMap(CleanupLLMModel.init(rawValue:))
+            ?? SettingsStorageService().load().cleanupModel
+    }
+
+    private static func argument(after flag: String) -> String? {
         let arguments = ProcessInfo.processInfo.arguments
-        guard let index = arguments.firstIndex(of: "--cleanup-transcript") else { return nil }
+        guard let index = arguments.firstIndex(of: flag) else { return nil }
 
         let valueIndex = arguments.index(after: index)
         guard valueIndex < arguments.endIndex else { return nil }
