@@ -24,9 +24,17 @@ final class PermissionsService {
     }
 
     func openAccessibilitySettings() {
+        openPrivacySettings(anchor: "Privacy_Accessibility")
+    }
+
+    func openMicrophoneSettings() {
+        openPrivacySettings(anchor: "Privacy_Microphone")
+    }
+
+    private func openPrivacySettings(anchor: String) {
         let urls = [
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security?\(anchor)",
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(anchor)",
         ]
 
         for string in urls {

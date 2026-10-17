@@ -26,7 +26,8 @@ struct FlowTypeApp: App {
             SettingsView()
                 .environmentObject(appState)
         }
-        .windowResizability(.contentSize)
+        .defaultSize(width: 820, height: 620)
+        .windowResizability(.contentMinSize)
     }
 }
 

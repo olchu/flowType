@@ -517,6 +517,12 @@ final class AppState: ObservableObject {
     }
 
     func requestMicrophonePermission() {
+        // Once denied, macOS no longer asks; only System Settings can change it.
+        guard microphonePermission == .notDetermined else {
+            permissionsService.openMicrophoneSettings()
+            return
+        }
+
         Task {
             _ = await permissionsService.requestMicrophonePermission()
             refreshPermissions()
@@ -554,9 +560,9 @@ final class AppState: ObservableObject {
         refreshLaunchAtLoginStatus()
     }
 
-    /// Lets the volume slider be judged by ear.
-    func previewFeedbackSound() {
-        playFeedback(.recordingStarted)
+    /// Lets the volume be judged by ear from Settings.
+    func previewFeedbackSound(_ sound: FeedbackSound = .recordingStarted) {
+        playFeedback(sound)
     }
 
     private func playFeedback(_ sound: FeedbackSound) {
@@ -636,10 +642,21 @@ final class AppState: ObservableObject {
     }
 }
 
-private enum FeedbackSound: CaseIterable {
+enum FeedbackSound: CaseIterable {
     case recordingStarted
     case recordingStopped
     case pasted
+
+    var title: String {
+        switch self {
+        case .recordingStarted:
+            "Recording starts"
+        case .recordingStopped:
+            "Recording stops"
+        case .pasted:
+            "Text pasted"
+        }
+    }
 
     /// WAV files in FlowType/Sounds, bundled as resources.
     var fileName: String {
