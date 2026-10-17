@@ -25,10 +25,6 @@ final class SettingsStorageService {
         defaults.set(data, forKey: key)
     }
 
-    func reset() {
-        defaults.removeObject(forKey: key)
-    }
-
     func hasCompletedOnboarding() -> Bool {
         defaults.bool(forKey: onboardingCompletedKey)
     }

@@ -10,14 +10,15 @@ final class FloatingIndicatorModel: ObservableObject {
     }
 
     @Published private(set) var content: Content
-    /// Level after the microphone sensitivity gate; 0 means silence.
-    @Published private(set) var audioLevel: Double
     @Published private(set) var style: IndicatorStyle
     @Published private(set) var waveColor: WaveColor
     @Published private(set) var presentationID = 0
-    @Published private(set) var dismissalID = 0
     /// Cleared by `show`, so a dismissal can be taken back while it runs.
     @Published private(set) var isDismissing = false
+    /// Level after the microphone sensitivity gate; 0 means silence. Not
+    /// published: it changes at buffer rate and the animations read it on
+    /// every frame anyway.
+    var audioLevel: Double
 
     init(
         content: Content = .status(.ready),
@@ -33,28 +34,14 @@ final class FloatingIndicatorModel: ObservableObject {
 
     func show(
         _ content: Content,
-        audioLevel: Double,
         style: IndicatorStyle,
         waveColor: WaveColor,
         startsNewPresentation: Bool
     ) {
-        // Called at audio level rate; unchanged values must not redraw.
-        if self.content != content {
-            self.content = content
-        }
-        if self.audioLevel != audioLevel {
-            self.audioLevel = audioLevel
-        }
-        if self.style != style {
-            self.style = style
-        }
-        if self.waveColor != waveColor {
-            self.waveColor = waveColor
-        }
-
-        if isDismissing {
-            isDismissing = false
-        }
+        self.content = content
+        self.style = style
+        self.waveColor = waveColor
+        isDismissing = false
 
         if startsNewPresentation {
             presentationID += 1
@@ -62,7 +49,6 @@ final class FloatingIndicatorModel: ObservableObject {
     }
 
     func beginDismissal() {
-        dismissalID += 1
         isDismissing = true
     }
 }
@@ -97,8 +83,19 @@ struct FloatingIndicatorView: View {
         .onChange(of: model.presentationID) {
             runIntroAnimation()
         }
-        .onChange(of: model.dismissalID) {
-            runDismissalAnimation()
+        .onChange(of: model.content) { _, content in
+            // The pill pops open again for the pasted checkmark.
+            if content == .pasted {
+                runIntroAnimation()
+            }
+        }
+        .onChange(of: model.isDismissing) { _, isDismissing in
+            // A dismissal taken back pops the pill open again.
+            if isDismissing {
+                runDismissalAnimation()
+            } else {
+                runIntroAnimation()
+            }
         }
     }
 
@@ -111,7 +108,7 @@ struct FloatingIndicatorView: View {
             case .pasted:
                 PastedStatusView()
             case .status(.recording):
-                RecordingBarsView(audioLevel: model.audioLevel)
+                RecordingBarsView(model: model)
             case .status(.transcribing):
                 TranscribingDotsView()
             case .status(.ready):
@@ -161,7 +158,8 @@ struct FloatingIndicatorView: View {
 }
 
 private struct RecordingBarsView: View {
-    let audioLevel: Double
+    /// Read on every tick for the unpublished audio level.
+    let model: FloatingIndicatorModel
 
     private let bars = Array(0..<8)
     private static let speeds: [Double] = [7.6, 4.9, 8.8, 5.7, 9.4, 6.5, 8.1, 5.2]
@@ -170,19 +168,20 @@ private struct RecordingBarsView: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 24)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
+            let audioLevel = model.audioLevel
 
             HStack(alignment: .center, spacing: 2) {
                 ForEach(bars, id: \.self) { index in
                     Capsule()
-                        .frame(width: 2, height: height(for: index, time: time))
-                        .opacity(opacity(for: index, time: time))
+                        .frame(width: 2, height: height(for: index, time: time, audioLevel: audioLevel))
+                        .opacity(opacity(for: index, time: time, audioLevel: audioLevel))
                 }
             }
             .frame(width: 30, height: 12)
         }
     }
 
-    private func height(for index: Int, time: TimeInterval) -> CGFloat {
+    private func height(for index: Int, time: TimeInterval, audioLevel: Double) -> CGFloat {
         guard audioLevel > 0 else { return 4 }
 
         let speed = Self.speeds[index]
@@ -193,7 +192,7 @@ private struct RecordingBarsView: View {
         return 3 + CGFloat(level) * 9
     }
 
-    private func opacity(for index: Int, time: TimeInterval) -> Double {
+    private func opacity(for index: Int, time: TimeInterval, audioLevel: Double) -> Double {
         guard audioLevel > 0 else { return 0.38 }
 
         let phase = time * (6.0 + Double(index).truncatingRemainder(dividingBy: 3)) + Double(index)
@@ -280,6 +279,29 @@ extension IndicatorStyle {
             CGSize(width: 72, height: 22)
         case .waves:
             WaveIndicatorView.size
+        }
+    }
+
+    /// Gap between the Dock and the bottom of the frame. The waves frame has
+    /// a transparent glow margin, so it can dip slightly behind the Dock and
+    /// still keep the lines above it.
+    var bottomInset: CGFloat {
+        switch self {
+        case .bars:
+            20
+        case .waves:
+            -10
+        }
+    }
+
+    /// How long the dismissal animation runs before the panel is hidden.
+    /// Waves collapse into the orb and fade, which takes longer than the pill.
+    var dismissalDuration: TimeInterval {
+        switch self {
+        case .bars:
+            0.19
+        case .waves:
+            0.52
         }
     }
 }

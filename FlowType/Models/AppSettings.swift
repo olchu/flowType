@@ -90,19 +90,6 @@ struct AppSettings: Codable, Equatable {
     var indicatorStyle: IndicatorStyle = .bars
     var waveColor: WaveColor = .blue
 
-    private enum CodingKeys: String, CodingKey {
-        case profile
-        case language
-        case finalizationMode
-        case cleanupMode
-        case cleanupModel
-        case autoPaste
-        case restoreClipboard
-        case microphoneSensitivity
-        case indicatorStyle
-        case waveColor
-    }
-
     init() {}
 
     init(from decoder: Decoder) throws {

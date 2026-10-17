@@ -29,12 +29,11 @@ enum TranscriptText {
         let continuationComparableWords = continuationWords.map(comparableWord)
         let maximumOverlap = min(8, prefixWords.count, continuationWords.count)
 
-        if maximumOverlap >= 2 {
-            for overlap in stride(from: maximumOverlap, through: 2, by: -1)
-            where Array(prefixWords.suffix(overlap)) == Array(continuationComparableWords.prefix(overlap)) {
-                let rest = continuationWords.dropFirst(overlap).joined(separator: " ")
-                return rest.isEmpty ? prefix : "\(prefix) \(rest)"
-            }
+        // Empty when there are fewer than two words to overlap.
+        for overlap in stride(from: maximumOverlap, through: 2, by: -1)
+        where Array(prefixWords.suffix(overlap)) == Array(continuationComparableWords.prefix(overlap)) {
+            let rest = continuationWords.dropFirst(overlap).joined(separator: " ")
+            return rest.isEmpty ? prefix : "\(prefix) \(rest)"
         }
 
         return "\(prefix) \(continuation)"

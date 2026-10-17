@@ -110,11 +110,7 @@ struct SettingsView: View {
 
     private var modelsSection: some View {
         Section("Models") {
-            Picker("Use profile", selection: $appState.settings.profile) {
-                ForEach(TranscriptionProfile.allCases) { profile in
-                    Text(profile.rawValue).tag(profile)
-                }
-            }
+            enumPicker("Use profile", selection: $appState.settings.profile)
 
             Text(appState.settings.profile.detail)
                 .font(.caption)
@@ -153,40 +149,24 @@ struct SettingsView: View {
 
     private var transcriptionSection: some View {
         Section("Transcription") {
-            Picker("Language", selection: $appState.settings.language) {
-                ForEach(TranscriptionLanguage.allCases) { language in
-                    Text(language.rawValue).tag(language)
-                }
-            }
+            enumPicker("Language", selection: $appState.settings.language)
 
             if appState.settings.profile.model.supportsStreaming {
-                Picker("Finalization mode", selection: $appState.settings.finalizationMode) {
-                    ForEach(TranscriptionFinalizationMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
+                enumPicker("Finalization mode", selection: $appState.settings.finalizationMode)
 
                 Text(appState.settings.finalizationMode.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Picker("Cleanup mode", selection: $appState.settings.cleanupMode) {
-                ForEach(TranscriptCleanupMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
+            enumPicker("Cleanup mode", selection: $appState.settings.cleanupMode)
 
             Text(appState.settings.cleanupMode.detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             if appState.settings.cleanupMode == .localLLM {
-                Picker("Cleanup model", selection: $appState.settings.cleanupModel) {
-                    ForEach(CleanupLLMModel.allCases) { model in
-                        Text(model.rawValue).tag(model)
-                    }
-                }
+                enumPicker("Cleanup model", selection: $appState.settings.cleanupModel)
 
                 Text(appState.settings.cleanupModel.detail)
                     .font(.caption)
@@ -225,11 +205,7 @@ struct SettingsView: View {
 
     private var indicatorSection: some View {
         Section("Indicator") {
-            Picker("Recording animation", selection: $appState.settings.indicatorStyle) {
-                ForEach(IndicatorStyle.allCases) { style in
-                    Text(style.rawValue).tag(style)
-                }
-            }
+            enumPicker("Recording animation", selection: $appState.settings.indicatorStyle)
             .pickerStyle(.segmented)
 
             if appState.settings.indicatorStyle == .waves {
@@ -343,6 +319,15 @@ struct SettingsView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func enumPicker<Value>(_ title: String, selection: Binding<Value>) -> some View
+    where Value: CaseIterable & Identifiable & Hashable & RawRepresentable<String>, Value.AllCases: RandomAccessCollection {
+        Picker(title, selection: selection) {
+            ForEach(Value.allCases) { value in
+                Text(value.rawValue).tag(value)
+            }
+        }
     }
 
     private func waveColorSwatch(_ color: WaveColor) -> some View {

@@ -6,74 +6,54 @@ final class FloatingIndicatorController {
     private var panel: NSPanel?
     private let model = FloatingIndicatorModel()
     private var hideTask: Task<Void, Never>?
-    private var isDismissalInProgress = false
-    private var style: IndicatorStyle = .bars
-    private var waveColor: WaveColor = .blue
-    /// Waves collapse into the orb and fade, which takes longer than the pill.
-    private var dismissalDuration: Duration {
-        style == .waves ? .milliseconds(520) : .milliseconds(190)
-    }
+    /// The pasted confirmation hides itself once it has been seen, so the
+    /// ready status that follows a paste must not cut it short.
+    private var isShowingPasted = false
 
-    func update(
-        for status: AppStatus,
-        isModelLoading: Bool,
-        audioLevel: Double = 0,
-        style: IndicatorStyle,
-        waveColor: WaveColor
-    ) {
-        self.style = style
-        self.waveColor = waveColor
-        let forceNewPresentation = restartsInterruptedDismissal
-        cancelPendingHide()
-
+    func update(for status: AppStatus, isModelLoading: Bool, style: IndicatorStyle, waveColor: WaveColor) {
         if isModelLoading {
-            present(.loading, forceNewPresentation: forceNewPresentation)
+            cancelPendingHide()
+            present(.loading, style: style, waveColor: waveColor)
             return
         }
 
         switch status {
         case .recording, .transcribing:
-            present(.status(status), audioLevel: audioLevel, forceNewPresentation: forceNewPresentation)
+            cancelPendingHide()
+            present(.status(status), style: style, waveColor: waveColor)
         case .ready:
+            guard !isShowingPasted else { return }
+            cancelPendingHide()
             beginDismissal()
         case .error:
             guard panel?.isVisible == true else { return }
-            present(.status(status), audioLevel: audioLevel, forceNewPresentation: forceNewPresentation)
+            cancelPendingHide()
+            present(.status(status), style: style, waveColor: waveColor)
             scheduleHide(after: .milliseconds(850))
         }
     }
 
     func showPasted() {
-        let forceNewPresentation = restartsInterruptedDismissal
         cancelPendingHide()
-
-        present(.pasted, forceNewPresentation: forceNewPresentation)
+        present(.pasted, style: model.style, waveColor: model.waveColor)
         scheduleHide(after: .milliseconds(650))
     }
 
-    /// The pill replays its intro when a dismissal is interrupted. Waves
-    /// instead grow back from wherever the collapse got to: on paste the app
-    /// reports ready and pasted back to back, and a restart reads as a jump.
-    private var restartsInterruptedDismissal: Bool {
-        isDismissalInProgress && style == .bars
+    /// Separate from `update`: the level changes at buffer rate and only the
+    /// running animations need it.
+    func setAudioLevel(_ level: Double) {
+        model.audioLevel = level
     }
 
-    private func present(
-        _ content: FloatingIndicatorModel.Content,
-        audioLevel: Double = 0,
-        forceNewPresentation: Bool
-    ) {
-        let panel = panel ?? makePanel()
+    private func present(_ content: FloatingIndicatorModel.Content, style: IndicatorStyle, waveColor: WaveColor) {
+        let panel = panel ?? makePanel(style: style)
         self.panel = panel
-        let startsNewPresentation = !panel.isVisible || forceNewPresentation
+        isShowingPasted = content == .pasted
+        // An interrupted dismissal is taken back by `show`; only a hidden
+        // panel starts over with the intro.
+        let startsNewPresentation = !panel.isVisible
 
-        model.show(
-            content,
-            audioLevel: audioLevel,
-            style: style,
-            waveColor: waveColor,
-            startsNewPresentation: startsNewPresentation
-        )
+        model.show(content, style: style, waveColor: waveColor, startsNewPresentation: startsNewPresentation)
 
         position(panel)
         if startsNewPresentation {
@@ -82,18 +62,17 @@ final class FloatingIndicatorController {
     }
 
     private func beginDismissal() {
+        isShowingPasted = false
         guard panel?.isVisible == true else {
             panel?.orderOut(nil)
             return
         }
 
         model.beginDismissal()
-        isDismissalInProgress = true
-        let dismissalDuration = dismissalDuration
+        let dismissalDuration = model.style.dismissalDuration
         hideTask = Task { [weak self] in
-            try? await Task.sleep(for: dismissalDuration)
+            try? await Task.sleep(for: .seconds(dismissalDuration))
             guard !Task.isCancelled else { return }
-            self?.isDismissalInProgress = false
             self?.panel?.orderOut(nil)
         }
     }
@@ -101,7 +80,6 @@ final class FloatingIndicatorController {
     private func cancelPendingHide() {
         hideTask?.cancel()
         hideTask = nil
-        isDismissalInProgress = false
     }
 
     private func scheduleHide(after delay: Duration) {
@@ -112,7 +90,7 @@ final class FloatingIndicatorController {
         }
     }
 
-    private func makePanel() -> NSPanel {
+    private func makePanel(style: IndicatorStyle) -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: style.indicatorSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -140,17 +118,11 @@ final class FloatingIndicatorController {
     private func position(_ panel: NSPanel) {
         guard let screen = NSScreen.main else { return }
 
-        // The waves frame has a transparent glow margin, so it can dip
-        // slightly behind the Dock and still keep the lines above it.
-        let dockAwareBottomInset: CGFloat = style == .waves ? -10 : 20
+        let style = model.style
         let size = style.indicatorSize
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - size.width / 2
-        let y = visibleFrame.minY + dockAwareBottomInset
-        let frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
-
-        // Called on every audio level update while recording.
-        guard panel.frame != frame else { return }
-        panel.setFrame(frame, display: true)
+        let y = visibleFrame.minY + style.bottomInset
+        panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)
     }
 }

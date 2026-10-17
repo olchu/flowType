@@ -73,7 +73,7 @@ final class TranscriptionService {
         case .parakeet:
             transcript = TranscriptText.clean(
                 try await parakeet.transcribe(
-                    audio.samples(resampledTo: ParakeetTranscriber.sampleRate),
+                    audio.samples(resampledTo: RecordedAudio.speechSampleRate),
                     languageCode: language.whisperKitCode
                 )
             )

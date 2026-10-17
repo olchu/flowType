@@ -16,17 +16,12 @@ struct WaveIndicatorView: NSViewRepresentable {
     static let size = CGSize(width: 280, height: 116)
 
     func makeNSView(context: Context) -> WaveLayerView {
-        WaveLayerView(frame: CGRect(origin: .zero, size: Self.size))
+        WaveLayerView(frame: CGRect(origin: .zero, size: Self.size), model: model)
     }
 
     func updateNSView(_ view: WaveLayerView, context: Context) {
-        view.update(
-            mode: mode,
-            audioLevel: model.audioLevel,
-            presentationID: model.presentationID,
-            isDismissing: model.isDismissing
-        )
-        view.apply(model.waveColor.palette)
+        view.update(mode: mode, presentationID: model.presentationID, isDismissing: model.isDismissing)
+        view.apply(model.waveColor)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: WaveLayerView, context: Context) -> CGSize? {
@@ -72,6 +67,8 @@ final class WaveLayerView: NSView {
         Strand(cycles: 2.9, speed: 1.5, phase: 5.6, swellSpeed: -0.6, gain: 0.25, isPrimary: true),
     ]
 
+    /// Read every frame for the audio level, which is not published.
+    private let model: FloatingIndicatorModel
     private let engine = WaveEngine()
     private let strandsLayer = CALayer()
     private let auraLayer = CAShapeLayer()
@@ -81,14 +78,16 @@ final class WaveLayerView: NSView {
     private var coreLayers: [CAShapeLayer] = []
     private var displayLink: CADisplayLink?
     private var stopTime: CFTimeInterval?
-    private var palette: WavePalette?
+    private var waveColor: WaveColor?
+    private var envelopeCache: [Double] = []
+    private var maskScanAmount: Double?
 
     private var mode: WaveEngine.Mode = .processing
-    private var audioLevel = 0.0
     private var presentationID: Int?
     private var isDismissing = false
 
-    override init(frame frameRect: NSRect) {
+    init(frame frameRect: NSRect, model: FloatingIndicatorModel) {
+        self.model = model
         super.init(frame: frameRect)
         wantsLayer = true
         setUpLayers()
@@ -99,9 +98,8 @@ final class WaveLayerView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(mode: WaveEngine.Mode, audioLevel: Double, presentationID: Int, isDismissing: Bool) {
+    func update(mode: WaveEngine.Mode, presentationID: Int, isDismissing: Bool) {
         self.mode = mode
-        self.audioLevel = audioLevel
         let now = CACurrentMediaTime()
 
         if presentationID != self.presentationID {
@@ -117,7 +115,7 @@ final class WaveLayerView: NSView {
         if isDismissing {
             engine.dismiss(at: now)
             // Stop redrawing once the orb has faded and the panel is hidden.
-            stopTime = now + 0.7
+            stopTime = now + IndicatorStyle.waves.dismissalDuration + 0.2
         } else {
             // Dismissal was taken back: grow back from the current state.
             engine.resume()
@@ -126,9 +124,10 @@ final class WaveLayerView: NSView {
         }
     }
 
-    func apply(_ palette: WavePalette) {
-        guard palette != self.palette else { return }
-        self.palette = palette
+    func apply(_ waveColor: WaveColor) {
+        guard waveColor != self.waveColor else { return }
+        self.waveColor = waveColor
+        let palette = waveColor.palette
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -224,7 +223,7 @@ final class WaveLayerView: NSView {
         orbLayer.endPoint = CGPoint(x: 1, y: 1)
         layer.addSublayer(orbLayer)
 
-        apply(WaveColor.blue.palette)
+        apply(.blue)
         render(WaveEngine.Frame(level: 0, clock: 0, spread: 0, visibility: 0, flash: 0, scan: 0, scanAmount: 0))
     }
 
@@ -247,7 +246,7 @@ final class WaveLayerView: NSView {
             stopDisplayLink()
             return
         }
-        render(engine.advance(mode: mode, audioLevel: audioLevel, at: now))
+        render(engine.advance(mode: mode, audioLevel: model.audioLevel, at: now))
     }
 
     private func render(_ frame: WaveEngine.Frame) {
@@ -269,9 +268,10 @@ final class WaveLayerView: NSView {
             let waveRect = CGRect(x: center.x - width / 2, y: rect.minY, width: width, height: rect.height)
             fadeMask.frame = CGRect(x: waveRect.minX, y: 0, width: width, height: bounds.height)
             let aura = CGMutablePath()
+            let envelopes = envelopeProfile(steps: max(2, Int(width / 2)))
 
             for (index, strand) in Self.strands.enumerated() {
-                let shapes = Self.shapes(for: strand, in: waveRect, amplitude: amplitude, frame: frame)
+                let shapes = Self.shapes(for: strand, in: waveRect, envelopes: envelopes, amplitude: amplitude, frame: frame)
                 aura.addPath(shapes.wideGlow)
                 let halo = haloLayers[index]
                 halo.shadowPath = shapes.wideGlow
@@ -284,7 +284,12 @@ final class WaveLayerView: NSView {
             auraLayer.shadowPath = aura
             auraLayer.opacity = Float(frame.visibility)
 
-            fadeMask.colors = Self.maskColors(scan: frame.scan, amount: frame.scanAmount)
+            // Outside processing the mask is static; skip rebuilding it.
+            let scanAmount = frame.scanAmount < 0.001 ? 0 : frame.scanAmount
+            if scanAmount > 0 || maskScanAmount != 0 {
+                fadeMask.colors = Self.maskColors(scan: frame.scan, amount: scanAmount)
+                maskScanAmount = scanAmount
+            }
         }
 
         let orbOpacity = frame.visibility * pow(1 - frame.spread, 1.5)
@@ -293,6 +298,17 @@ final class WaveLayerView: NSView {
         orbLayer.bounds = CGRect(x: 0, y: 0, width: radius * 2, height: radius * 2)
         orbLayer.position = center
         orbLayer.opacity = Float(orbOpacity)
+    }
+
+    /// Bell curve along a strand: flat thin ends, full swing only in the
+    /// middle. Shared by all strands; recomputed only when the width changes.
+    private func envelopeProfile(steps: Int) -> [Double] {
+        if envelopeCache.count != steps + 1 {
+            envelopeCache = (0...steps).map { step in
+                exp(-pow((Double(step) / Double(steps) - 0.5) / 0.2, 2))
+            }
+        }
+        return envelopeCache
     }
 
     private static let maskLocations = (0...16).map { Double($0) / 16 }
@@ -314,24 +330,21 @@ final class WaveLayerView: NSView {
     private static func shapes(
         for strand: Strand,
         in rect: CGRect,
+        envelopes: [Double],
         amplitude: CGFloat,
         frame: WaveEngine.Frame
     ) -> (ribbon: CGPath, nearGlow: CGPath, wideGlow: CGPath) {
-        let steps = max(2, Int(rect.width / 2))
+        let steps = envelopes.count - 1
         let limit = Double(rect.height / 2 - 3)
         let time = frame.clock
         let maxHalfWidth = (0.8 + 1.0 * frame.level) * strand.gain
         var points: [CGPoint] = []
         var halfWidths: [CGFloat] = []
-        var envelopes: [CGFloat] = []
         points.reserveCapacity(steps + 1)
         halfWidths.reserveCapacity(steps + 1)
-        envelopes.reserveCapacity(steps + 1)
 
-        for step in 0...steps {
+        for (step, envelope) in envelopes.enumerated() {
             let progress = Double(step) / Double(steps)
-            // Bell curve: flat thin ends, full swing only in the middle.
-            let envelope = exp(-pow((progress - 0.5) / 0.2, 2))
             // Slowly moving swell so humps rise and fall along the strand.
             let swell = 0.65 + 0.35 * sin(progress * .pi * 1.6 + time * strand.swellSpeed + strand.phase)
             let wave = sin(progress * .pi * 2 * strand.cycles + time * strand.speed + strand.phase)
@@ -343,7 +356,6 @@ final class WaveLayerView: NSView {
 
             points.append(CGPoint(x: rect.minX + rect.width * progress, y: rect.midY + offset))
             halfWidths.append(CGFloat(0.3 + maxHalfWidth * envelope))
-            envelopes.append(CGFloat(envelope))
         }
 
         // Unit normals, so steep slopes keep their thickness.
@@ -361,12 +373,12 @@ final class WaveLayerView: NSView {
         func ribbon(widenedBy extra: CGFloat) -> CGPath {
             let path = CGMutablePath()
             for index in points.indices {
-                let width = halfWidths[index] + extra * envelopes[index]
+                let width = halfWidths[index] + extra * CGFloat(envelopes[index])
                 let point = CGPoint(x: points[index].x + normals[index].x * width, y: points[index].y + normals[index].y * width)
                 index == 0 ? path.move(to: point) : path.addLine(to: point)
             }
             for index in points.indices.reversed() {
-                let width = halfWidths[index] + extra * envelopes[index]
+                let width = halfWidths[index] + extra * CGFloat(envelopes[index])
                 path.addLine(to: CGPoint(x: points[index].x - normals[index].x * width, y: points[index].y - normals[index].y * width))
             }
             path.closeSubpath()
@@ -480,7 +492,7 @@ final class WaveEngine {
 
 /// Colours of one wave theme: strands alternate between `primary` and
 /// `secondary`; `haze` tints the cloud behind them.
-struct WavePalette: Equatable {
+struct WavePalette {
     let primary: CGColor
     let secondary: CGColor
     let haze: CGColor

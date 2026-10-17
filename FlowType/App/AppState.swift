@@ -38,7 +38,7 @@ final class AppState: ObservableObject {
     @Published private(set) var modelLoadingProgress: Double = 0
     @Published private(set) var modelStorageStates: [TranscriptionModel: ModelStorageState] = [:]
     @Published private(set) var resourceUsage = ProcessResourceUsage()
-    @Published private(set) var hasCompletedOnboarding = false
+    private var hasCompletedOnboarding = false
     @Published private(set) var isLaunchAtLoginEnabled = false
     @Published private(set) var launchAtLoginStatusMessage = "Disabled"
     @Published private(set) var isCleanupModelWarmingUp = false
@@ -62,8 +62,15 @@ final class AppState: ObservableObject {
     private var dictationTargetApplication: NSRunningApplication?
     private var resourceUsageTask: Task<Void, Never>?
     private var streamingTranscriptionTask: Task<Void, Never>?
-    private var audioLevel: Double = 0
-    private var smoothedAudioLevel: Double = 0
+    /// Smoothed microphone level; goes straight to the indicator, bypassing
+    /// the status update path because it changes at buffer rate.
+    private var audioLevel: Double = 0 {
+        didSet {
+            floatingIndicatorController.setAudioLevel(
+                Self.gatedLevel(audioLevel, sensitivity: settings.microphoneSensitivity)
+            )
+        }
+    }
 
     init() {
         settings = settingsStorageService.load()
@@ -142,7 +149,6 @@ final class AppState: ObservableObject {
 
         lastErrorMessage = nil
         audioLevel = 0
-        smoothedAudioLevel = 0
 
         let timing = DictationTiming()
         timing.mark("start requested")
@@ -178,7 +184,6 @@ final class AppState: ObservableObject {
         guard canStopRecording else { return }
 
         audioLevel = 0
-        smoothedAudioLevel = 0
         status = .transcribing
         feedbackSoundPlayer.play(.recordingStopped)
 
@@ -188,6 +193,8 @@ final class AppState: ObservableObject {
             let recordedAudio = audioRecorder.stopRecording()
             timing.mark("audio stopped duration=\(formattedSeconds(recordedAudio.duration))s samples=\(recordedAudio.samples.count)")
 
+            // Independent of the stream, so it runs while the stream stops.
+            async let speechDetection = speechDetector.detect(in: recordedAudio)
             let streamingResult = await transcriptionService.stopStreamingTranscription()
             timing.mark(
                 "stream stopped textChars=\(streamingResult.transcript.count) confirmedChars=\(streamingResult.confirmedTranscript.count) confirmedEnd=\(formattedSeconds(streamingResult.confirmedEndSeconds))s streamAudio=\(formattedSeconds(streamingResult.audio.duration))s"
@@ -198,6 +205,7 @@ final class AppState: ObservableObject {
 
             let rawTranscript = await finalTranscript(
                 from: recordedAudio,
+                speechDetection: await speechDetection,
                 streamingResult: streamingResult,
                 timing: timing
             )
@@ -235,16 +243,19 @@ final class AppState: ObservableObject {
                 }
             }
 
-            status = .ready
+            // Before .ready, so the confirmation is already up and the ready
+            // status doesn't start a dismissal.
             floatingIndicatorController.showPasted()
+            status = .ready
             timing.finish("ready")
         }
     }
 
     private func finalTranscript(
         from recordedAudio: RecordedAudio,
+        speechDetection: SpeechDetectionService.Detection,
         streamingResult: TranscriptionService.StreamingTranscriptionResult,
-        timing: DictationTiming? = nil
+        timing: DictationTiming
     ) async -> String {
         let streamingTranscript = streamingResult.transcript
 
@@ -254,13 +265,13 @@ final class AppState: ObservableObject {
         // never cut: Silero works in 256 ms steps, so its speech start can
         // clip a first syllable, and dropping it would not speed anything up.
         let speechAudio: RecordedAudio
-        switch await speechDetector.detect(in: recordedAudio) {
+        switch speechDetection {
         case .noSpeech:
-            timing?.mark("speech gate skipped final decode vad=silero")
+            timing.mark("speech gate skipped final decode vad=silero")
             return ""
         case .unavailable:
             guard recordedAudio.containsLikelySpeech else {
-                timing?.mark("speech gate skipped final decode vad=energy")
+                timing.mark("speech gate skipped final decode vad=energy")
                 return ""
             }
             speechAudio = recordedAudio
@@ -268,13 +279,13 @@ final class AppState: ObservableObject {
             speechAudio = settings.profile.model.trimsTrailingSilence
                 ? recordedAudio.prefix(seconds: end)
                 : recordedAudio
-            timing?.mark(
+            timing.mark(
                 "vad speech=\(formattedSeconds(start))-\(formattedSeconds(end))s of \(formattedSeconds(recordedAudio.duration))s"
             )
         }
 
         do {
-            timing?.mark("finalization mode=\(settings.finalizationMode.rawValue)")
+            timing.mark("finalization mode=\(settings.finalizationMode.rawValue)")
 
             if !settings.profile.model.supportsStreaming {
                 return try await fullTranscript(of: speechAudio, reason: "no-stream-model", timing: timing)
@@ -289,7 +300,7 @@ final class AppState: ObservableObject {
                 return try await fullTranscript(of: speechAudio, reason: "baseline-mode", timing: timing)
 
             case .streamOnly:
-                timing?.mark("final decode skipped reason=stream-only")
+                timing.mark("final decode skipped reason=stream-only")
                 return streamingTranscript
 
             case .streamTail:
@@ -300,19 +311,19 @@ final class AppState: ObservableObject {
                 )
             }
         } catch {
-            timing?.mark("final decode failed fallback=stream error=\(error.localizedDescription)")
+            timing.mark("final decode failed fallback=stream error=\(error.localizedDescription)")
             return streamingTranscript
         }
     }
 
-    private func fullTranscript(of audio: RecordedAudio, reason: String, timing: DictationTiming?) async throws -> String {
-        timing?.mark("full decode started reason=\(reason) window=\(formattedSeconds(audio.duration))s")
+    private func fullTranscript(of audio: RecordedAudio, reason: String, timing: DictationTiming) async throws -> String {
+        timing.mark("full decode started reason=\(reason) window=\(formattedSeconds(audio.duration))s")
         let transcript = try await transcriptionService.transcribe(
             audio,
             language: settings.language,
             model: settings.profile.model
         )
-        timing?.mark("full decode completed chars=\(transcript.count)")
+        timing.mark("full decode completed chars=\(transcript.count)")
         return transcript
     }
 
@@ -325,7 +336,7 @@ final class AppState: ObservableObject {
     private func streamTailTranscript(
         speechAudio: RecordedAudio,
         streamingResult: TranscriptionService.StreamingTranscriptionResult,
-        timing: DictationTiming?
+        timing: DictationTiming
     ) async throws -> String {
         let confirmedTranscript = streamingResult.confirmedTranscript
 
@@ -342,13 +353,13 @@ final class AppState: ObservableObject {
         let speechEnd: TimeInterval
         switch await speechDetector.detect(in: tailAudio) {
         case .noSpeech:
-            timing?.mark("tail decode skipped reason=no-speech vad=silero tail=\(formattedSeconds(tailAudio.duration))s")
+            timing.mark("tail decode skipped reason=no-speech vad=silero tail=\(formattedSeconds(tailAudio.duration))s")
             return confirmedTranscript
         case .speech(_, let end):
             speechEnd = end
         case .unavailable:
             guard let energySpeechEnd = tailAudio.lastSpeechEnd(noiseFloor: streamingResult.audio.noiseFloor) else {
-                timing?.mark("tail decode skipped reason=no-speech vad=energy tail=\(formattedSeconds(tailAudio.duration))s")
+                timing.mark("tail decode skipped reason=no-speech vad=energy tail=\(formattedSeconds(tailAudio.duration))s")
                 return confirmedTranscript
             }
             // The margin keeps quiet word endings the energy check misses.
@@ -356,7 +367,7 @@ final class AppState: ObservableObject {
         }
 
         let trimmedTail = tailAudio.prefix(seconds: speechEnd)
-        timing?.mark(
+        timing.mark(
             "tail decode started from=\(formattedSeconds(streamingResult.confirmedEndSeconds))s window=\(formattedSeconds(trimmedTail.duration))s"
         )
 
@@ -370,22 +381,15 @@ final class AppState: ObservableObject {
         } catch TranscriptionService.TranscriptionError.emptyTranscript {
             tailTranscript = ""
         }
-        timing?.mark("tail decode completed chars=\(tailTranscript.count)")
+        timing.mark("tail decode completed chars=\(tailTranscript.count)")
 
         return TranscriptText.joined(prefix: confirmedTranscript, continuation: tailTranscript)
     }
 
     private func updateAudioLevel(_ level: Double) {
         let clampedLevel = min(1, max(0, level))
-        let smoothing = clampedLevel > smoothedAudioLevel ? 0.6 : 0.3
-        smoothedAudioLevel += (clampedLevel - smoothedAudioLevel) * smoothing
-
-        guard abs(audioLevel - smoothedAudioLevel) >= 0.01 || smoothedAudioLevel == 0 else {
-            return
-        }
-
-        audioLevel = smoothedAudioLevel
-        updateFloatingIndicator()
+        let smoothing = clampedLevel > audioLevel ? 0.6 : 0.3
+        audioLevel += (clampedLevel - audioLevel) * smoothing
     }
 
     func clearError() {
@@ -542,7 +546,6 @@ final class AppState: ObservableObject {
     }
 
     func resetSettingsToDefaults() {
-        settingsStorageService.reset()
         settings = AppSettings()
     }
 
@@ -602,7 +605,6 @@ final class AppState: ObservableObject {
         floatingIndicatorController.update(
             for: status,
             isModelLoading: isModelWarmingUp,
-            audioLevel: Self.gatedLevel(audioLevel, sensitivity: settings.microphoneSensitivity),
             style: settings.indicatorStyle,
             waveColor: settings.waveColor
         )
@@ -615,7 +617,7 @@ final class AppState: ObservableObject {
     }
 }
 
-private enum FeedbackSound {
+private enum FeedbackSound: CaseIterable {
     case recordingStarted
     case recordingStopped
     case pasted
@@ -652,7 +654,7 @@ private final class FeedbackSoundPlayer {
     private var players: [FeedbackSound: AVAudioPlayer] = [:]
 
     init() {
-        for sound in [FeedbackSound.recordingStarted, .recordingStopped, .pasted] {
+        for sound in FeedbackSound.allCases {
             guard let url = Bundle.main.url(forResource: sound.fileName, withExtension: "wav"),
                   let player = try? AVAudioPlayer(contentsOf: url) else { continue }
             player.prepareToPlay()

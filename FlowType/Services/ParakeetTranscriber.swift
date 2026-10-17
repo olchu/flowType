@@ -8,8 +8,6 @@ import FluidAudio
 ///
 /// Kept in its own file: FluidAudio and WhisperKit export clashing type names.
 actor ParakeetTranscriber {
-    static let sampleRate: Double = 16_000
-
     private static let version: AsrModelVersion = .ultra
 
     private var manager: AsrManager?
