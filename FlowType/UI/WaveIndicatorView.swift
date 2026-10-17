@@ -78,6 +78,7 @@ final class WaveLayerView: NSView {
     private var displayLink: CADisplayLink?
     private var stopTime: CFTimeInterval?
     private var waveColor: WaveColor?
+    private var appliedAppearance: WaveAppearance?
     private var envelopeCache: [Double] = []
     private var maskScanAmount: Double?
 
@@ -126,7 +127,16 @@ final class WaveLayerView: NSView {
     func apply(_ waveColor: WaveColor) {
         guard waveColor != self.waveColor else { return }
         self.waveColor = waveColor
-        let palette = waveColor.palette
+        applyStyle()
+    }
+
+    /// Colours, glows and blending from the theme and the current tuning.
+    private func applyStyle() {
+        let appearance = WaveAppearanceStore.shared.appearance
+        appliedAppearance = appearance
+        let palette = (waveColor ?? .blue).palette
+        // Additive, so crossings light up like the Canvas version did.
+        let filter = appearance.usesAdditiveBlending ? "plusL" : nil
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -134,9 +144,20 @@ final class WaveLayerView: NSView {
 
         for (index, strand) in Self.strands.enumerated() {
             let color = strand.isPrimary ? palette.primary : palette.secondary
-            haloLayers[index].shadowColor = color
-            coreLayers[index].fillColor = color
-            coreLayers[index].shadowColor = color
+            let halo = haloLayers[index]
+            halo.isHidden = !appearance.showsHalo
+            halo.shadowColor = color.mixedWithWhite(appearance.haloWhiteness)
+            halo.shadowRadius = appearance.haloRadius
+            halo.compositingFilter = filter
+
+            let core = coreLayers[index]
+            core.fillColor = appearance.showsLines
+                ? color.mixedWithWhite(appearance.lineWhiteness).copy(alpha: appearance.lineOpacity)
+                : nil
+            core.shadowColor = color.mixedWithWhite(appearance.glowWhiteness)
+            core.shadowRadius = appearance.glowRadius
+            core.shadowOpacity = appearance.showsGlow ? Float(appearance.glowOpacity) : 0
+            core.compositingFilter = filter
         }
         orbLayer.colors = [
             CGColor.white,
@@ -185,23 +206,19 @@ final class WaveLayerView: NSView {
 
         // Glow comes from shadows with explicit paths: the window server
         // blurs them, so there is no hard edge and no in-process rendering.
+        // Radii, colours and blending are set by `applyStyle`.
         haloLayers = Self.strands.map { _ in
             let halo = CAShapeLayer()
             halo.shadowOffset = .zero
-            halo.shadowRadius = 10
             halo.shadowOpacity = 1
             return halo
         }
         coreLayers = Self.strands.map { _ in
             let core = CAShapeLayer()
             core.shadowOffset = .zero
-            core.shadowRadius = 3.5
-            core.shadowOpacity = 0.5
             return core
         }
         for sublayer in haloLayers + coreLayers {
-            // Additive, so crossings light up like the Canvas version did.
-            sublayer.compositingFilter = "plusL"
             sublayer.frame = bounds
             strandsLayer.addSublayer(sublayer)
         }
@@ -243,6 +260,11 @@ final class WaveLayerView: NSView {
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
 
+        let appearance = WaveAppearanceStore.shared.appearance
+        if appearance != appliedAppearance {
+            applyStyle()
+        }
+
         // Waves live in the inner rect; the margin is room for the glow.
         let rect = bounds.insetBy(dx: Self.glowMargin.width, dy: Self.glowMargin.height)
         let center = CGPoint(x: rect.midX, y: rect.midY)
@@ -259,10 +281,17 @@ final class WaveLayerView: NSView {
             let envelopes = envelopeProfile(steps: max(2, Int(width / 2)))
 
             for (index, strand) in Self.strands.enumerated() {
-                let shapes = Self.shapes(for: strand, in: waveRect, envelopes: envelopes, amplitude: amplitude, frame: frame)
+                let shapes = Self.shapes(
+                    for: strand,
+                    in: waveRect,
+                    envelopes: envelopes,
+                    amplitude: amplitude,
+                    frame: frame,
+                    appearance: appearance
+                )
                 let halo = haloLayers[index]
                 halo.shadowPath = shapes.wideGlow
-                halo.opacity = Float(min(1, 0.3 * strand.gain * brightness))
+                halo.opacity = Float(min(1, appearance.haloOpacity * strand.gain * brightness))
                 let core = coreLayers[index]
                 core.path = shapes.ribbon
                 core.shadowPath = shapes.nearGlow
@@ -278,7 +307,7 @@ final class WaveLayerView: NSView {
         }
 
         let orbOpacity = frame.visibility * pow(1 - frame.spread, 1.5)
-        orbLayer.isHidden = orbOpacity <= 0.01
+        orbLayer.isHidden = orbOpacity <= 0.01 || !appearance.showsOrb
         let radius = 16 * (0.4 + 0.6 * frame.visibility)
         orbLayer.bounds = CGRect(x: 0, y: 0, width: radius * 2, height: radius * 2)
         orbLayer.position = center
@@ -317,7 +346,8 @@ final class WaveLayerView: NSView {
         in rect: CGRect,
         envelopes: [Double],
         amplitude: CGFloat,
-        frame: WaveEngine.Frame
+        frame: WaveEngine.Frame,
+        appearance: WaveAppearance
     ) -> (ribbon: CGPath, nearGlow: CGPath, wideGlow: CGPath) {
         let steps = envelopes.count - 1
         let limit = Double(rect.height / 2 - 3)
@@ -340,7 +370,7 @@ final class WaveLayerView: NSView {
             let offset = limit * tanh(raw / limit)
 
             points.append(CGPoint(x: rect.minX + rect.width * progress, y: rect.midY + offset))
-            halfWidths.append(CGFloat(0.3 + maxHalfWidth * envelope))
+            halfWidths.append(CGFloat((0.3 + maxHalfWidth * envelope) * appearance.lineWidth))
         }
 
         // Unit normals, so steep slopes keep their thickness.
@@ -370,7 +400,7 @@ final class WaveLayerView: NSView {
             return path
         }
 
-        return (ribbon(widenedBy: 0), ribbon(widenedBy: 1.5), ribbon(widenedBy: 5))
+        return (ribbon(widenedBy: 0), ribbon(widenedBy: 1.5), ribbon(widenedBy: CGFloat(appearance.haloSpread)))
     }
 }
 

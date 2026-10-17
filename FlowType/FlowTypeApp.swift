@@ -28,6 +28,13 @@ struct FlowTypeApp: App {
         }
         .defaultSize(width: 820, height: 620)
         .windowResizability(.contentMinSize)
+
+        Window("Wave Tuner", id: "wave-tuner") {
+            WaveTunerView()
+                .environmentObject(appState)
+        }
+        .defaultSize(width: 860, height: 760)
+        .windowResizability(.contentMinSize)
     }
 }
 

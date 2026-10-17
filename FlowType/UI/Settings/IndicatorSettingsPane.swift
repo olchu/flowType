@@ -1,7 +1,14 @@
+import AppKit
 import SwiftUI
 
 struct IndicatorSettingsPane: View {
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var appState: AppState
+    /// The Wave Tuner is a design tool, hidden until Option is pressed three
+    /// times in a row in this pane; it then stays until the pane is left.
+    @State private var showsTuner = false
+    @State private var optionKeyMonitor: Any?
+    @State private var optionPresses: [Date] = []
 
     var body: some View {
         Form {
@@ -28,6 +35,15 @@ struct IndicatorSettingsPane: View {
                             }
                         }
                     }
+
+                    if showsTuner {
+                        LabeledContent("Glow and layers") {
+                            Button("Fine-tune…") {
+                                openWindow(id: "wave-tuner")
+                                NSApplication.shared.activate(ignoringOtherApps: true)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -41,6 +57,32 @@ struct IndicatorSettingsPane: View {
             } footer: {
                 Text("Lower values ignore more background noise. Higher values make the indicator react to quieter speech.")
             }
+        }
+        .onAppear {
+            optionKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+                // Count presses only, not releases.
+                if event.modifierFlags.contains(.option) {
+                    registerOptionPress()
+                }
+                return event
+            }
+        }
+        .onDisappear {
+            if let optionKeyMonitor {
+                NSEvent.removeMonitor(optionKeyMonitor)
+            }
+            optionKeyMonitor = nil
+            optionPresses = []
+            showsTuner = false
+        }
+    }
+
+    private func registerOptionPress() {
+        let now = Date.now
+        optionPresses = optionPresses.filter { now.timeIntervalSince($0) < 1 } + [now]
+        if optionPresses.count >= 3 {
+            showsTuner = true
+            optionPresses = []
         }
     }
 
