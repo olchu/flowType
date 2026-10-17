@@ -196,4 +196,6 @@ Speech and language models are not bundled with the app. They are downloaded fro
 
 ## License
 
-FlowType is released under the [MIT License](LICENSE).
+The FlowType source code is released under the [MIT License](LICENSE).
+
+The FlowType name, the app icon, the menu bar icon and the images in `Docs/images` are not covered by the MIT License; all rights to them are reserved. If you publish a fork or a derived app, please give it a different name and icon.
