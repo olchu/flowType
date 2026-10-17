@@ -232,6 +232,16 @@ struct SettingsView: View {
             }
             .pickerStyle(.segmented)
 
+            if appState.settings.indicatorStyle == .waves {
+                LabeledContent("Wave color") {
+                    HStack(spacing: 6) {
+                        ForEach(WaveColor.allCases) { color in
+                            waveColorSwatch(color)
+                        }
+                    }
+                }
+            }
+
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Microphone sensitivity")
@@ -333,6 +343,34 @@ struct SettingsView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func waveColorSwatch(_ color: WaveColor) -> some View {
+        let palette = color.palette
+        let isSelected = appState.settings.waveColor == color
+
+        return Button {
+            appState.settings.waveColor = color
+        } label: {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color(cgColor: palette.primary), Color(cgColor: palette.secondary)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 18, height: 18)
+                .padding(3)
+                .overlay {
+                    Circle()
+                        .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+                }
+        }
+        .buttonStyle(.plain)
+        .help(color.rawValue)
+        .accessibilityLabel(color.rawValue)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func permissionText(_ text: String, granted: Bool) -> some View {

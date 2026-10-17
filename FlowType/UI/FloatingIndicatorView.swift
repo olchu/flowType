@@ -13,16 +13,31 @@ final class FloatingIndicatorModel: ObservableObject {
     /// Level after the microphone sensitivity gate; 0 means silence.
     @Published private(set) var audioLevel: Double
     @Published private(set) var style: IndicatorStyle
+    @Published private(set) var waveColor: WaveColor
     @Published private(set) var presentationID = 0
     @Published private(set) var dismissalID = 0
+    /// Cleared by `show`, so a dismissal can be taken back while it runs.
+    @Published private(set) var isDismissing = false
 
-    init(content: Content = .status(.ready), audioLevel: Double = 0, style: IndicatorStyle = .bars) {
+    init(
+        content: Content = .status(.ready),
+        audioLevel: Double = 0,
+        style: IndicatorStyle = .bars,
+        waveColor: WaveColor = .blue
+    ) {
         self.content = content
         self.audioLevel = audioLevel
         self.style = style
+        self.waveColor = waveColor
     }
 
-    func show(_ content: Content, audioLevel: Double, style: IndicatorStyle, startsNewPresentation: Bool) {
+    func show(
+        _ content: Content,
+        audioLevel: Double,
+        style: IndicatorStyle,
+        waveColor: WaveColor,
+        startsNewPresentation: Bool
+    ) {
         // Called at audio level rate; unchanged values must not redraw.
         if self.content != content {
             self.content = content
@@ -33,6 +48,13 @@ final class FloatingIndicatorModel: ObservableObject {
         if self.style != style {
             self.style = style
         }
+        if self.waveColor != waveColor {
+            self.waveColor = waveColor
+        }
+
+        if isDismissing {
+            isDismissing = false
+        }
 
         if startsNewPresentation {
             presentationID += 1
@@ -41,6 +63,7 @@ final class FloatingIndicatorModel: ObservableObject {
 
     func beginDismissal() {
         dismissalID += 1
+        isDismissing = true
     }
 }
 

@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Waves style of the floating indicator: a glowing orb that stretches into
 /// voice-reactive ribbons, a pulse of light running along them while
-/// processing, a flash on
-/// paste, and the collapse back into the orb on dismissal.
+/// processing, a flash on paste, and the collapse back into the orb on
+/// dismissal.
 ///
 /// Drawn with Core Animation layers instead of a SwiftUI Canvas: Canvas
 /// starts SwiftUI's Metal renderer, which costs about 95 MB of GPU memory,
@@ -24,8 +24,9 @@ struct WaveIndicatorView: NSViewRepresentable {
             mode: mode,
             audioLevel: model.audioLevel,
             presentationID: model.presentationID,
-            dismissalID: model.dismissalID
+            isDismissing: model.isDismissing
         )
+        view.apply(model.waveColor.palette)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: WaveLayerView, context: Context) -> CGSize? {
@@ -51,25 +52,24 @@ final class WaveLayerView: NSView {
         let phase: Double
         let swellSpeed: Double
         let gain: Double
-        let color: CGColor
+        /// Strands alternate between the palette's two colours.
+        let isPrimary: Bool
     }
 
-    private static let cyan = CGColor(red: 0.38, green: 0.95, blue: 0.96, alpha: 1)
-    private static let blue = CGColor(red: 0.34, green: 0.6, blue: 1.0, alpha: 1)
     private static let glowMargin = CGSize(width: 20, height: 18)
 
     // Opposite speeds make strands drift through each other.
     private static let strands: [Strand] = [
-        Strand(cycles: 1.6, speed: 3.1, phase: 0.0, swellSpeed: 1.3, gain: 1.0, color: cyan),
-        Strand(cycles: 2.1, speed: -2.4, phase: 1.9, swellSpeed: -0.9, gain: 0.85, color: blue),
-        Strand(cycles: 1.2, speed: 2.0, phase: 3.6, swellSpeed: 0.7, gain: 0.7, color: cyan),
-        Strand(cycles: 2.6, speed: -3.4, phase: 5.0, swellSpeed: 1.1, gain: 0.55, color: blue),
-        Strand(cycles: 1.9, speed: 4.2, phase: 2.4, swellSpeed: -1.5, gain: 0.4, color: cyan),
+        Strand(cycles: 1.6, speed: 3.1, phase: 0.0, swellSpeed: 1.3, gain: 1.0, isPrimary: true),
+        Strand(cycles: 2.1, speed: -2.4, phase: 1.9, swellSpeed: -0.9, gain: 0.85, isPrimary: false),
+        Strand(cycles: 1.2, speed: 2.0, phase: 3.6, swellSpeed: 0.7, gain: 0.7, isPrimary: true),
+        Strand(cycles: 2.6, speed: -3.4, phase: 5.0, swellSpeed: 1.1, gain: 0.55, isPrimary: false),
+        Strand(cycles: 1.9, speed: 4.2, phase: 2.4, swellSpeed: -1.5, gain: 0.4, isPrimary: true),
         // Thin fibers that fill the bundle out.
-        Strand(cycles: 1.4, speed: -1.7, phase: 4.3, swellSpeed: 0.5, gain: 0.5, color: blue),
-        Strand(cycles: 2.3, speed: 2.7, phase: 0.9, swellSpeed: -1.2, gain: 0.35, color: cyan),
-        Strand(cycles: 1.1, speed: -3.8, phase: 2.9, swellSpeed: 1.6, gain: 0.3, color: blue),
-        Strand(cycles: 2.9, speed: 1.5, phase: 5.6, swellSpeed: -0.6, gain: 0.25, color: cyan),
+        Strand(cycles: 1.4, speed: -1.7, phase: 4.3, swellSpeed: 0.5, gain: 0.5, isPrimary: false),
+        Strand(cycles: 2.3, speed: 2.7, phase: 0.9, swellSpeed: -1.2, gain: 0.35, isPrimary: true),
+        Strand(cycles: 1.1, speed: -3.8, phase: 2.9, swellSpeed: 1.6, gain: 0.3, isPrimary: false),
+        Strand(cycles: 2.9, speed: 1.5, phase: 5.6, swellSpeed: -0.6, gain: 0.25, isPrimary: true),
     ]
 
     private let engine = WaveEngine()
@@ -81,11 +81,12 @@ final class WaveLayerView: NSView {
     private var coreLayers: [CAShapeLayer] = []
     private var displayLink: CADisplayLink?
     private var stopTime: CFTimeInterval?
+    private var palette: WavePalette?
 
     private var mode: WaveEngine.Mode = .processing
     private var audioLevel = 0.0
     private var presentationID: Int?
-    private var dismissalID: Int?
+    private var isDismissing = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -98,23 +99,55 @@ final class WaveLayerView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(mode: WaveEngine.Mode, audioLevel: Double, presentationID: Int, dismissalID: Int) {
+    func update(mode: WaveEngine.Mode, audioLevel: Double, presentationID: Int, isDismissing: Bool) {
         self.mode = mode
         self.audioLevel = audioLevel
+        let now = CACurrentMediaTime()
 
         if presentationID != self.presentationID {
             self.presentationID = presentationID
-            self.dismissalID = dismissalID
-            engine.present(at: CACurrentMediaTime())
+            self.isDismissing = false
+            engine.present(at: now)
             stopTime = nil
             startDisplayLink()
-        } else if dismissalID != self.dismissalID {
-            self.dismissalID = dismissalID
-            let now = CACurrentMediaTime()
+        }
+
+        guard isDismissing != self.isDismissing else { return }
+        self.isDismissing = isDismissing
+        if isDismissing {
             engine.dismiss(at: now)
             // Stop redrawing once the orb has faded and the panel is hidden.
             stopTime = now + 0.7
+        } else {
+            // Dismissal was taken back: grow back from the current state.
+            engine.resume()
+            stopTime = nil
+            startDisplayLink()
         }
+    }
+
+    func apply(_ palette: WavePalette) {
+        guard palette != self.palette else { return }
+        self.palette = palette
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        auraLayer.shadowColor = palette.haze
+        for (index, strand) in Self.strands.enumerated() {
+            let color = strand.isPrimary ? palette.primary : palette.secondary
+            haloLayers[index].shadowColor = color
+            coreLayers[index].fillColor = color
+            coreLayers[index].shadowColor = color
+        }
+        orbLayer.colors = [
+            CGColor.white,
+            CGColor.white,
+            palette.primary,
+            palette.primary.copy(alpha: 0.3)!,
+            palette.primary.copy(alpha: 0)!,
+        ]
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -153,29 +186,26 @@ final class WaveLayerView: NSView {
         fadeMask.endPoint = CGPoint(x: 1, y: 0.5)
         fadeMask.locations = Self.maskLocations.map { NSNumber(value: $0) }
 
-        // Dark haze behind the glow, so the bundle reads as plasma on any
-        // background. Normal compositing: it darkens what is underneath.
+        // Coloured haze behind the glow. The additive glow vanishes on light
+        // backgrounds, so the haze carries the colour there; on dark ones it
+        // gives the bundle a plasma cloud. Black looked dirty on white.
         auraLayer.frame = bounds
-        auraLayer.shadowColor = CGColor.black
         auraLayer.shadowOffset = .zero
-        auraLayer.shadowRadius = 14
-        auraLayer.shadowOpacity = 0.75
+        auraLayer.shadowRadius = 18
+        auraLayer.shadowOpacity = 0.4
         strandsLayer.addSublayer(auraLayer)
 
         // Glow comes from shadows with explicit paths: the window server
         // blurs them, so there is no hard edge and no in-process rendering.
-        haloLayers = Self.strands.map { strand in
+        haloLayers = Self.strands.map { _ in
             let halo = CAShapeLayer()
-            halo.shadowColor = strand.color
             halo.shadowOffset = .zero
             halo.shadowRadius = 10
             halo.shadowOpacity = 1
             return halo
         }
-        coreLayers = Self.strands.map { strand in
+        coreLayers = Self.strands.map { _ in
             let core = CAShapeLayer()
-            core.fillColor = strand.color
-            core.shadowColor = strand.color
             core.shadowOffset = .zero
             core.shadowRadius = 3.5
             core.shadowOpacity = 0.5
@@ -189,18 +219,12 @@ final class WaveLayerView: NSView {
         }
 
         orbLayer.type = .radial
-        orbLayer.colors = [
-            CGColor.white,
-            CGColor.white,
-            Self.cyan,
-            Self.cyan.copy(alpha: 0.3)!,
-            Self.cyan.copy(alpha: 0)!,
-        ]
         orbLayer.locations = [0, 0.12, 0.3, 0.55, 1]
         orbLayer.startPoint = CGPoint(x: 0.5, y: 0.5)
         orbLayer.endPoint = CGPoint(x: 1, y: 1)
         layer.addSublayer(orbLayer)
 
+        apply(WaveColor.blue.palette)
         render(WaveEngine.Frame(level: 0, clock: 0, spread: 0, visibility: 0, flash: 0, scan: 0, scanAmount: 0))
     }
 
@@ -403,6 +427,10 @@ final class WaveEngine {
         }
     }
 
+    func resume() {
+        dismissedAt = nil
+    }
+
     func advance(mode: Mode, audioLevel: Double, at time: TimeInterval) -> Frame {
         let elapsed = min(max(time - (lastTime ?? time), 0), 0.1)
         lastTime = time
@@ -447,5 +475,41 @@ final class WaveEngine {
 
     private static func ease(_ value: Double, toward target: Double, rate: Double, elapsed: Double) -> Double {
         value + (target - value) * (1 - exp(-rate * elapsed))
+    }
+}
+
+/// Colours of one wave theme: strands alternate between `primary` and
+/// `secondary`; `haze` tints the cloud behind them.
+struct WavePalette: Equatable {
+    let primary: CGColor
+    let secondary: CGColor
+    let haze: CGColor
+}
+
+extension WaveColor {
+    var palette: WavePalette {
+        switch self {
+        case .blue:
+            Self.palette(primary: (0.38, 0.95, 0.96), secondary: (0.34, 0.6, 1.0), haze: (0.3, 0.68, 1.0))
+        case .red:
+            Self.palette(primary: (1.0, 0.45, 0.4), secondary: (1.0, 0.22, 0.42), haze: (1.0, 0.35, 0.35))
+        case .yellow:
+            Self.palette(primary: (1.0, 0.88, 0.4), secondary: (1.0, 0.62, 0.22), haze: (1.0, 0.75, 0.3))
+        case .green:
+            Self.palette(primary: (0.5, 1.0, 0.62), secondary: (0.22, 0.88, 0.72), haze: (0.35, 0.95, 0.6))
+        case .violet:
+            Self.palette(primary: (0.82, 0.6, 1.0), secondary: (0.56, 0.42, 1.0), haze: (0.7, 0.5, 1.0))
+        }
+    }
+
+    private static func palette(
+        primary: (Double, Double, Double),
+        secondary: (Double, Double, Double),
+        haze: (Double, Double, Double)
+    ) -> WavePalette {
+        func color(_ rgb: (Double, Double, Double)) -> CGColor {
+            CGColor(red: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
+        }
+        return WavePalette(primary: color(primary), secondary: color(secondary), haze: color(haze))
     }
 }

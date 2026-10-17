@@ -8,14 +8,22 @@ final class FloatingIndicatorController {
     private var hideTask: Task<Void, Never>?
     private var isDismissalInProgress = false
     private var style: IndicatorStyle = .bars
+    private var waveColor: WaveColor = .blue
     /// Waves collapse into the orb and fade, which takes longer than the pill.
     private var dismissalDuration: Duration {
         style == .waves ? .milliseconds(520) : .milliseconds(190)
     }
 
-    func update(for status: AppStatus, isModelLoading: Bool, audioLevel: Double = 0, style: IndicatorStyle) {
+    func update(
+        for status: AppStatus,
+        isModelLoading: Bool,
+        audioLevel: Double = 0,
+        style: IndicatorStyle,
+        waveColor: WaveColor
+    ) {
         self.style = style
-        let forceNewPresentation = isDismissalInProgress
+        self.waveColor = waveColor
+        let forceNewPresentation = restartsInterruptedDismissal
         cancelPendingHide()
 
         if isModelLoading {
@@ -36,11 +44,18 @@ final class FloatingIndicatorController {
     }
 
     func showPasted() {
-        let forceNewPresentation = isDismissalInProgress
+        let forceNewPresentation = restartsInterruptedDismissal
         cancelPendingHide()
 
         present(.pasted, forceNewPresentation: forceNewPresentation)
         scheduleHide(after: .milliseconds(650))
+    }
+
+    /// The pill replays its intro when a dismissal is interrupted. Waves
+    /// instead grow back from wherever the collapse got to: on paste the app
+    /// reports ready and pasted back to back, and a restart reads as a jump.
+    private var restartsInterruptedDismissal: Bool {
+        isDismissalInProgress && style == .bars
     }
 
     private func present(
@@ -52,7 +67,13 @@ final class FloatingIndicatorController {
         self.panel = panel
         let startsNewPresentation = !panel.isVisible || forceNewPresentation
 
-        model.show(content, audioLevel: audioLevel, style: style, startsNewPresentation: startsNewPresentation)
+        model.show(
+            content,
+            audioLevel: audioLevel,
+            style: style,
+            waveColor: waveColor,
+            startsNewPresentation: startsNewPresentation
+        )
 
         position(panel)
         if startsNewPresentation {

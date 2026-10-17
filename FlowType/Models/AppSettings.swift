@@ -67,6 +67,17 @@ enum IndicatorStyle: String, Codable, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+/// Colour theme of the waves indicator; palettes live in WaveIndicatorView.
+enum WaveColor: String, Codable, CaseIterable, Identifiable {
+    case blue = "Blue"
+    case red = "Red"
+    case yellow = "Yellow"
+    case green = "Green"
+    case violet = "Violet"
+
+    var id: Self { self }
+}
+
 struct AppSettings: Codable, Equatable {
     var profile: TranscriptionProfile = .balanced
     var language: TranscriptionLanguage = .auto
@@ -77,6 +88,7 @@ struct AppSettings: Codable, Equatable {
     var restoreClipboard = true
     var microphoneSensitivity = 0.5
     var indicatorStyle: IndicatorStyle = .bars
+    var waveColor: WaveColor = .blue
 
     private enum CodingKeys: String, CodingKey {
         case profile
@@ -88,6 +100,7 @@ struct AppSettings: Codable, Equatable {
         case restoreClipboard
         case microphoneSensitivity
         case indicatorStyle
+        case waveColor
     }
 
     init() {}
@@ -104,5 +117,6 @@ struct AppSettings: Codable, Equatable {
         restoreClipboard = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? defaults.restoreClipboard
         microphoneSensitivity = try container.decodeIfPresent(Double.self, forKey: .microphoneSensitivity) ?? defaults.microphoneSensitivity
         indicatorStyle = (try? container.decodeIfPresent(IndicatorStyle.self, forKey: .indicatorStyle)) ?? defaults.indicatorStyle
+        waveColor = (try? container.decodeIfPresent(WaveColor.self, forKey: .waveColor)) ?? defaults.waveColor
     }
 }

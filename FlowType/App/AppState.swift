@@ -603,7 +603,8 @@ final class AppState: ObservableObject {
             for: status,
             isModelLoading: isModelWarmingUp,
             audioLevel: Self.gatedLevel(audioLevel, sensitivity: settings.microphoneSensitivity),
-            style: settings.indicatorStyle
+            style: settings.indicatorStyle,
+            waveColor: settings.waveColor
         )
     }
 
