@@ -12,15 +12,17 @@ final class AppState: ObservableObject {
     }
     @Published var settings = AppSettings() {
         didSet {
+            guard settings != oldValue else { return }
             settingsStorageService.save(settings)
-            updateFloatingIndicator()
+            if settings.profile != oldValue.profile {
+                prewarmCurrentModel()
+            }
             if settings.cleanupMode == .localLLM
                 && (oldValue.cleanupMode != .localLLM || oldValue.cleanupModel != settings.cleanupModel) {
                 prewarmTranscriptCleanupModel()
             }
         }
     }
-    @Published var lastTranscript = ""
     @Published var lastErrorMessage: String?
     @Published private(set) var isHotkeyRunning = false
     @Published private(set) var hotkeyStatusMessage = "Waiting for Accessibility permission."
@@ -34,7 +36,6 @@ final class AppState: ObservableObject {
     @Published private(set) var modelWarmupMessage = "Model is not loaded yet."
     @Published private(set) var modelLoadingProgress: Double = 0
     @Published private(set) var modelStorageStates: [TranscriptionModel: ModelStorageState] = [:]
-    @Published private(set) var audioLevel: Double = 0
     @Published private(set) var resourceUsage = ProcessResourceUsage()
     @Published private(set) var hasCompletedOnboarding = false
     @Published private(set) var isLaunchAtLoginEnabled = false
@@ -59,6 +60,7 @@ final class AppState: ObservableObject {
     private var dictationTargetApplication: NSRunningApplication?
     private var resourceUsageTask: Task<Void, Never>?
     private var streamingTranscriptionTask: Task<Void, Never>?
+    private var audioLevel: Double = 0
     private var smoothedAudioLevel: Double = 0
 
     init() {
@@ -95,7 +97,7 @@ final class AppState: ObservableObject {
             && hasAccessibilityPermission
             && isHotkeyRunning
             && !isModelWarmingUp
-            && modelStorageStates[settings.profile.model] == .downloaded
+            && selectedModelStorageState == .downloaded
             && status != .error
     }
 
@@ -118,7 +120,7 @@ final class AppState: ObservableObject {
         (status == .ready || status == .error)
             && microphonePermission.isGranted
             && !isModelWarmingUp
-            && modelStorageStates[settings.profile.model] == .downloaded
+            && selectedModelStorageState == .downloaded
     }
 
     var canStopRecording: Bool {
@@ -126,14 +128,17 @@ final class AppState: ObservableObject {
     }
 
     var selectedModelStorageState: ModelStorageState {
-        modelStorageStates[settings.profile.model] ?? .notDownloaded
+        storageState(of: settings.profile.model)
+    }
+
+    func storageState(of model: TranscriptionModel) -> ModelStorageState {
+        modelStorageStates[model] ?? .notDownloaded
     }
 
     func startDictation() {
         guard canStartRecording else { return }
 
         lastErrorMessage = nil
-        lastTranscript = ""
         audioLevel = 0
         smoothedAudioLevel = 0
 
@@ -159,9 +164,7 @@ final class AppState: ObservableObject {
                 try await transcriptionService.startStreamingTranscription(
                     language: settings.language,
                     model: settings.profile.model
-                ) { [weak self] transcript in
-                    self?.lastTranscript = transcript
-                }
+                )
             } catch {
                 _ = audioRecorder.stopRecording()
                 showError(error)
@@ -181,11 +184,11 @@ final class AppState: ObservableObject {
             let timing = DictationTiming()
             timing.mark("finish requested")
             let recordedAudio = audioRecorder.stopRecording()
-            timing.mark("audio stopped duration=\(Self.formattedSeconds(recordedAudio.duration))s samples=\(recordedAudio.samples.count)")
+            timing.mark("audio stopped duration=\(formattedSeconds(recordedAudio.duration))s samples=\(recordedAudio.samples.count)")
 
             let streamingResult = await transcriptionService.stopStreamingTranscription()
             timing.mark(
-                "stream stopped textChars=\(streamingResult.transcript.count) confirmedChars=\(streamingResult.confirmedTranscript.count) confirmedEnd=\(Self.formattedSeconds(streamingResult.confirmedEndSeconds))s streamAudio=\(Self.formattedSeconds(streamingResult.audio.duration))s"
+                "stream stopped textChars=\(streamingResult.transcript.count) confirmedChars=\(streamingResult.confirmedTranscript.count) confirmedEnd=\(formattedSeconds(streamingResult.confirmedEndSeconds))s streamAudio=\(formattedSeconds(streamingResult.audio.duration))s"
             )
 
             streamingTranscriptionTask?.cancel()
@@ -209,13 +212,10 @@ final class AppState: ObservableObject {
             )
 
             guard !transcript.isEmpty else {
-                lastTranscript = ""
                 status = .ready
                 timing.finish("empty transcript")
                 return
             }
-
-            lastTranscript = transcript
 
             if settings.autoPaste {
                 do {
@@ -227,7 +227,7 @@ final class AppState: ObservableObject {
                     timing.mark("paste completed")
                     playFeedbackSound(.pasted)
                 } catch {
-                    showPasteFallback(error)
+                    showError(error)
                     timing.finish("paste failed")
                     return
                 }
@@ -263,11 +263,11 @@ final class AppState: ObservableObject {
             }
             speechAudio = recordedAudio
         case .speech(let start, let end):
-            speechAudio = settings.profile.model.engine == .parakeet
-                ? recordedAudio
-                : recordedAudio.prefix(seconds: end)
+            speechAudio = settings.profile.model.trimsTrailingSilence
+                ? recordedAudio.prefix(seconds: end)
+                : recordedAudio
             timing?.mark(
-                "vad speech=\(Self.formattedSeconds(start))-\(Self.formattedSeconds(end))s of \(Self.formattedSeconds(recordedAudio.duration))s"
+                "vad speech=\(formattedSeconds(start))-\(formattedSeconds(end))s of \(formattedSeconds(recordedAudio.duration))s"
             )
         }
 
@@ -304,7 +304,7 @@ final class AppState: ObservableObject {
     }
 
     private func fullTranscript(of audio: RecordedAudio, reason: String, timing: DictationTiming?) async throws -> String {
-        timing?.mark("full decode started reason=\(reason) window=\(Self.formattedSeconds(audio.duration))s")
+        timing?.mark("full decode started reason=\(reason) window=\(formattedSeconds(audio.duration))s")
         let transcript = try await transcriptionService.transcribe(
             audio,
             language: settings.language,
@@ -340,13 +340,13 @@ final class AppState: ObservableObject {
         let speechEnd: TimeInterval
         switch await speechDetector.detect(in: tailAudio) {
         case .noSpeech:
-            timing?.mark("tail decode skipped reason=no-speech vad=silero tail=\(Self.formattedSeconds(tailAudio.duration))s")
+            timing?.mark("tail decode skipped reason=no-speech vad=silero tail=\(formattedSeconds(tailAudio.duration))s")
             return confirmedTranscript
         case .speech(_, let end):
             speechEnd = end
         case .unavailable:
             guard let energySpeechEnd = tailAudio.lastSpeechEnd(noiseFloor: streamingResult.audio.noiseFloor) else {
-                timing?.mark("tail decode skipped reason=no-speech vad=energy tail=\(Self.formattedSeconds(tailAudio.duration))s")
+                timing?.mark("tail decode skipped reason=no-speech vad=energy tail=\(formattedSeconds(tailAudio.duration))s")
                 return confirmedTranscript
             }
             // The margin keeps quiet word endings the energy check misses.
@@ -355,7 +355,7 @@ final class AppState: ObservableObject {
 
         let trimmedTail = tailAudio.prefix(seconds: speechEnd)
         timing?.mark(
-            "tail decode started from=\(Self.formattedSeconds(streamingResult.confirmedEndSeconds))s window=\(Self.formattedSeconds(trimmedTail.duration))s"
+            "tail decode started from=\(formattedSeconds(streamingResult.confirmedEndSeconds))s window=\(formattedSeconds(trimmedTail.duration))s"
         )
 
         let tailTranscript: String
@@ -375,7 +375,7 @@ final class AppState: ObservableObject {
 
     private func updateAudioLevel(_ level: Double) {
         let clampedLevel = min(1, max(0, level))
-        let smoothing = clampedLevel > smoothedAudioLevel ? 0.42 : 0.18
+        let smoothing = clampedLevel > smoothedAudioLevel ? 0.6 : 0.3
         smoothedAudioLevel += (clampedLevel - smoothedAudioLevel) * smoothing
 
         guard abs(audioLevel - smoothedAudioLevel) >= 0.01 || smoothedAudioLevel == 0 else {
@@ -384,10 +384,6 @@ final class AppState: ObservableObject {
 
         audioLevel = smoothedAudioLevel
         updateFloatingIndicator()
-    }
-
-    nonisolated private static func formattedSeconds(_ seconds: TimeInterval) -> String {
-        String(format: "%.3f", seconds)
     }
 
     func clearError() {
@@ -469,10 +465,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    func downloadSelectedModelFromOnboarding() {
-        download(settings.profile.model)
-    }
-
     func finishOnboarding() {
         hasCompletedOnboarding = true
         settingsStorageService.setOnboardingCompleted(true)
@@ -522,7 +514,7 @@ final class AppState: ObservableObject {
     }
 
     func refreshModelStorageStates() {
-        for model in TranscriptionModel.availableModels {
+        for model in TranscriptionModel.allCases {
             modelStorageStates[model] = modelStorageService.isDownloaded(model)
                 ? .downloaded
                 : .notDownloaded
@@ -541,18 +533,15 @@ final class AppState: ObservableObject {
     func setLaunchAtLoginEnabled(_ isEnabled: Bool) {
         do {
             try loginItemService.setEnabled(isEnabled)
-            refreshLaunchAtLoginStatus()
         } catch {
-            refreshLaunchAtLoginStatus()
-            lastErrorMessage = error.localizedDescription
-            status = .error
+            showError(error)
         }
+        refreshLaunchAtLoginStatus()
     }
 
     func resetSettingsToDefaults() {
         settingsStorageService.reset()
         settings = AppSettings()
-        prewarmCurrentModel()
     }
 
     func showOnboardingIfNeeded() {
@@ -582,24 +571,16 @@ final class AppState: ObservableObject {
 
         do {
             try hotkeyService.start()
-            isHotkeyRunning = hotkeyService.isRunning
-            hotkeyStatusMessage = hotkeyService.isRunning
-                ? "Running"
-                : "Could not start the global hotkey listener."
+            isHotkeyRunning = true
+            hotkeyStatusMessage = "Running"
         } catch {
             isHotkeyRunning = false
             hotkeyStatusMessage = error.localizedDescription
-            lastErrorMessage = error.localizedDescription
-            status = .error
+            showError(error)
         }
     }
 
     private func showError(_ error: Error) {
-        lastErrorMessage = error.localizedDescription
-        status = .error
-    }
-
-    private func showPasteFallback(_ error: Error) {
         lastErrorMessage = error.localizedDescription
         status = .error
     }
@@ -619,9 +600,15 @@ final class AppState: ObservableObject {
         floatingIndicatorController.update(
             for: status,
             isModelLoading: isModelWarmingUp,
-            audioLevel: audioLevel,
-            microphoneSensitivity: settings.microphoneSensitivity
+            audioLevel: Self.gatedLevel(audioLevel, sensitivity: settings.microphoneSensitivity),
+            style: settings.indicatorStyle
         )
+    }
+
+    /// Higher sensitivity lowers the level below which the bars stay idle.
+    private static func gatedLevel(_ level: Double, sensitivity: Double) -> Double {
+        let threshold = 0.09 - min(max(sensitivity, 0), 1) * 0.08
+        return max(0, (level - threshold) / max(0.01, 1 - threshold))
     }
 
     private func playFeedbackSound(_ feedback: FeedbackSound) {
@@ -669,20 +656,16 @@ private final class DictationTiming {
 
     func mark(_ message: String) {
         let now = ContinuousClock.now
-        let total = start.duration(to: now).timeInterval
-        let delta = last.duration(to: now).timeInterval
+        let total = start.duration(to: now) / .seconds(1)
+        let delta = last.duration(to: now) / .seconds(1)
         last = now
 
-        let line = "[FlowTypeTiming] +\(Self.format(delta))s total=\(Self.format(total))s \(message)"
+        let line = "[FlowTypeTiming] +\(formattedSeconds(delta))s total=\(formattedSeconds(total))s \(message)"
         Self.logger.debug("\(line, privacy: .public)")
     }
 
     func finish(_ message: String) {
         mark("finished \(message)")
-    }
-
-    private static func format(_ seconds: TimeInterval) -> String {
-        String(format: "%.3f", seconds)
     }
     #else
     func mark(_ message: String) {}
@@ -690,9 +673,6 @@ private final class DictationTiming {
     #endif
 }
 
-private extension Duration {
-    var timeInterval: TimeInterval {
-        let components = self.components
-        return Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
-    }
+nonisolated private func formattedSeconds(_ seconds: TimeInterval) -> String {
+    String(format: "%.3f", seconds)
 }

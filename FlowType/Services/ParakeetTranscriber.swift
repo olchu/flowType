@@ -22,10 +22,8 @@ actor ParakeetTranscriber {
         AsrModels.modelsExist(at: cacheDirectory, version: version)
     }
 
-    nonisolated static func download(onProgress: (@Sendable (Double) -> Void)? = nil) async throws {
-        try await AsrModels.download(version: version) { progress in
-            onProgress?(progress.fractionCompleted)
-        }
+    nonisolated static func download() async throws {
+        _ = try await AsrModels.download(version: version)
     }
 
     func prewarm() async throws {

@@ -60,6 +60,13 @@ enum CleanupLLMModel: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum IndicatorStyle: String, Codable, CaseIterable, Identifiable {
+    case bars = "Bars"
+    case waves = "Waves"
+
+    var id: Self { self }
+}
+
 struct AppSettings: Codable, Equatable {
     var profile: TranscriptionProfile = .balanced
     var language: TranscriptionLanguage = .auto
@@ -69,6 +76,7 @@ struct AppSettings: Codable, Equatable {
     var autoPaste = true
     var restoreClipboard = true
     var microphoneSensitivity = 0.5
+    var indicatorStyle: IndicatorStyle = .bars
 
     private enum CodingKeys: String, CodingKey {
         case profile
@@ -79,19 +87,22 @@ struct AppSettings: Codable, Equatable {
         case autoPaste
         case restoreClipboard
         case microphoneSensitivity
+        case indicatorStyle
     }
 
     init() {}
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        profile = try container.decodeIfPresent(TranscriptionProfile.self, forKey: .profile) ?? .balanced
-        language = try container.decodeIfPresent(TranscriptionLanguage.self, forKey: .language) ?? .auto
-        finalizationMode = try container.decodeIfPresent(TranscriptionFinalizationMode.self, forKey: .finalizationMode) ?? .streamTail
-        cleanupMode = try container.decodeIfPresent(TranscriptCleanupMode.self, forKey: .cleanupMode) ?? .localRules
-        cleanupModel = (try? container.decodeIfPresent(CleanupLLMModel.self, forKey: .cleanupModel)) ?? .qwen25_1_5B
-        autoPaste = try container.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? true
-        restoreClipboard = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? true
-        microphoneSensitivity = try container.decodeIfPresent(Double.self, forKey: .microphoneSensitivity) ?? 0.5
+        let defaults = AppSettings()
+        profile = try container.decodeIfPresent(TranscriptionProfile.self, forKey: .profile) ?? defaults.profile
+        language = try container.decodeIfPresent(TranscriptionLanguage.self, forKey: .language) ?? defaults.language
+        finalizationMode = try container.decodeIfPresent(TranscriptionFinalizationMode.self, forKey: .finalizationMode) ?? defaults.finalizationMode
+        cleanupMode = try container.decodeIfPresent(TranscriptCleanupMode.self, forKey: .cleanupMode) ?? defaults.cleanupMode
+        cleanupModel = (try? container.decodeIfPresent(CleanupLLMModel.self, forKey: .cleanupModel)) ?? defaults.cleanupModel
+        autoPaste = try container.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? defaults.autoPaste
+        restoreClipboard = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? defaults.restoreClipboard
+        microphoneSensitivity = try container.decodeIfPresent(Double.self, forKey: .microphoneSensitivity) ?? defaults.microphoneSensitivity
+        indicatorStyle = (try? container.decodeIfPresent(IndicatorStyle.self, forKey: .indicatorStyle)) ?? defaults.indicatorStyle
     }
 }

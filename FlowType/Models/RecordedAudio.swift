@@ -4,6 +4,9 @@ nonisolated struct RecordedAudio: Sendable {
     let samples: [Float]
     let sampleRate: Double
 
+    /// Silero, Whisper and Parakeet all take 16 kHz mono audio.
+    static let speechSampleRate: Double = 16_000
+
     var duration: TimeInterval {
         guard sampleRate > 0 else { return 0 }
         return TimeInterval(samples.count) / sampleRate
@@ -21,26 +24,13 @@ nonisolated struct RecordedAudio: Sendable {
         return rms >= 0.012 && activeRatio >= 0.005
     }
 
-    func suffix(seconds: TimeInterval) -> RecordedAudio {
-        guard seconds > 0, sampleRate > 0, !samples.isEmpty else {
-            return self
-        }
-
-        let sampleCount = min(samples.count, Int((seconds * sampleRate).rounded()))
-        return RecordedAudio(
-            samples: Array(samples.suffix(sampleCount)),
-            sampleRate: sampleRate
-        )
-    }
-
     func suffix(from seconds: TimeInterval) -> RecordedAudio {
         guard seconds > 0, sampleRate > 0 else {
             return self
         }
 
-        let startIndex = min(samples.count, Int((seconds * sampleRate).rounded()))
         return RecordedAudio(
-            samples: Array(samples[startIndex...]),
+            samples: Array(samples[sampleIndex(at: seconds)...]),
             sampleRate: sampleRate
         )
     }
@@ -50,15 +40,18 @@ nonisolated struct RecordedAudio: Sendable {
             return RecordedAudio(samples: [], sampleRate: sampleRate)
         }
 
-        let sampleCount = min(samples.count, Int((seconds * sampleRate).rounded()))
         return RecordedAudio(
-            samples: Array(samples.prefix(sampleCount)),
+            samples: Array(samples.prefix(sampleIndex(at: seconds))),
             sampleRate: sampleRate
         )
     }
 
+    func resampled(to targetSampleRate: Double) -> RecordedAudio {
+        RecordedAudio(samples: samples(resampledTo: targetSampleRate), sampleRate: targetSampleRate)
+    }
+
     /// Frame-level RMS energies, used for a lightweight voice activity check.
-    func frameLevels(frameSeconds: TimeInterval = 0.03) -> [Float] {
+    private func frameLevels(frameSeconds: TimeInterval = 0.03) -> [Float] {
         let frameLength = max(1, Int(frameSeconds * sampleRate))
         guard samples.count >= frameLength else { return [] }
 
@@ -120,6 +113,10 @@ nonisolated struct RecordedAudio: Sendable {
 
             return samples[lowerIndex] + (samples[upperIndex] - samples[lowerIndex]) * fraction
         }
+    }
+
+    private func sampleIndex(at seconds: TimeInterval) -> Int {
+        min(samples.count, Int((seconds * sampleRate).rounded()))
     }
 
     private var rootMeanSquareLevel: Double {

@@ -151,24 +151,15 @@ final class PasteService {
     }
 
     private func insertTextUsingAccessibility(_ text: String) -> Bool {
-        let systemWideElement = AXUIElementCreateSystemWide()
-        var focusedElement: CFTypeRef?
-
-        let focusedElementResult = AXUIElementCopyAttributeValue(
-            systemWideElement,
-            kAXFocusedUIElementAttribute as CFString,
-            &focusedElement
-        )
-        guard
-            focusedElementResult == .success,
-            let focusedElement,
-            CFGetTypeID(focusedElement) == AXUIElementGetTypeID()
-        else {
+        guard let focusedElement = elementAttribute(
+            kAXFocusedUIElementAttribute,
+            of: AXUIElementCreateSystemWide()
+        ) else {
             return false
         }
 
         let result = AXUIElementSetAttributeValue(
-            focusedElement as! AXUIElement,
+            focusedElement,
             kAXSelectedTextAttribute as CFString,
             text as CFTypeRef
         )

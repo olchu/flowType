@@ -41,7 +41,6 @@ final class TranscriptionService {
     private var loadedModel: TranscriptionModel?
     private var streamTranscriber: AudioStreamTranscriber?
     private var streamTask: Task<Void, Never>?
-    private var streamTranscript = ""
     private let streamSnapshot = StreamSnapshotStore()
     private let parakeet = ParakeetTranscriber()
 
@@ -69,32 +68,23 @@ final class TranscriptionService {
             throw TranscriptionError.emptyRecording
         }
 
-        if model.engine == .parakeet {
-            let transcript = TranscriptText.clean(
+        let transcript: String
+        switch model.engine {
+        case .parakeet:
+            transcript = TranscriptText.clean(
                 try await parakeet.transcribe(
                     audio.samples(resampledTo: ParakeetTranscriber.sampleRate),
                     languageCode: language.whisperKitCode
                 )
             )
-            guard !transcript.isEmpty else {
-                throw TranscriptionError.emptyTranscript
-            }
-            return transcript
+        case .whisperKit:
+            let pipeline = try await pipeline(for: model, shouldPrewarm: false)
+            let results = try await pipeline.transcribe(
+                audioArray: audio.samples(resampledTo: Double(WhisperKit.sampleRate)),
+                decodeOptions: Self.decodingOptions(for: language)
+            )
+            transcript = Self.text(of: results.flatMap(\.segments))
         }
-
-        let pipeline = try await pipeline(for: model, shouldPrewarm: false)
-        let options = DecodingOptions(
-            language: language.whisperKitCode,
-            detectLanguage: language == .auto,
-            skipSpecialTokens: true
-        )
-        let samples = audio.samples(resampledTo: Double(WhisperKit.sampleRate))
-        let results = try await pipeline.transcribe(
-            audioArray: samples,
-            decodeOptions: options
-        )
-
-        let transcript = Self.text(of: results.flatMap(\.segments))
 
         guard !transcript.isEmpty else {
             throw TranscriptionError.emptyTranscript
@@ -105,11 +95,9 @@ final class TranscriptionService {
 
     func startStreamingTranscription(
         language: TranscriptionLanguage,
-        model: TranscriptionModel,
-        onTranscriptChanged: @escaping @MainActor @Sendable (String) -> Void
+        model: TranscriptionModel
     ) async throws {
         await stopStreamingTranscription()
-        streamTranscript = ""
         streamSnapshot.reset()
 
         guard model.supportsStreaming else { return }
@@ -119,13 +107,9 @@ final class TranscriptionService {
             throw WhisperError.tokenizerUnavailable()
         }
 
-        let options = DecodingOptions(
-            language: language.whisperKitCode,
-            detectLanguage: language == .auto,
-            skipSpecialTokens: true,
-            wordTimestamps: true,
-            concurrentWorkerCount: 1
-        )
+        var options = Self.decodingOptions(for: language)
+        options.wordTimestamps = true
+        options.concurrentWorkerCount = 1
 
         let transcriber = AudioStreamTranscriber(
             audioEncoder: pipeline.audioEncoder,
@@ -136,28 +120,25 @@ final class TranscriptionService {
             audioProcessor: pipeline.audioProcessor,
             decodingOptions: options,
             requiredSegmentsForConfirmation: 1
-        ) { [weak self, streamSnapshot] _, newState in
-            // Stored synchronously so the snapshot read at stop time is never
-            // behind a pending main-actor hop.
-            streamSnapshot.update(
+        ) { [streamSnapshot] _, newState in
+            // Only stored here: the text is merged once, when the dictation
+            // stops, rather than on every state change.
+            streamSnapshot.update(StreamSnapshot(
                 confirmedSegments: newState.confirmedSegments,
+                unconfirmedSegments: newState.unconfirmedSegments,
+                currentText: newState.currentText,
                 confirmedEndSeconds: TimeInterval(newState.lastConfirmedSegmentEndSeconds)
-            )
-            let transcript = Self.transcript(from: newState)
-            Task { @MainActor [weak self] in
-                self?.streamTranscript = transcript
-                onTranscriptChanged(transcript)
-            }
+            ))
         }
 
         streamTranscriber = transcriber
-        streamTask = Task { [weak self] in
+        streamTask = Task { [streamSnapshot] in
             do {
                 try await transcriber.startStreamTranscription()
             } catch {
-                await MainActor.run {
-                    self?.streamTranscript = ""
-                }
+                // A failed stream leaves no text, so the recording is decoded
+                // in full when the dictation stops.
+                streamSnapshot.reset()
             }
         }
     }
@@ -176,14 +157,12 @@ final class TranscriptionService {
         streamTask = nil
         streamTranscriber = nil
 
-        let transcript = streamTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         let snapshot = streamSnapshot.current()
         let audioSamples = hadStream ? pipeline.map { Array($0.audioProcessor.audioSamples) } ?? [] : []
-        streamTranscript = ""
         streamSnapshot.reset()
 
         return StreamingTranscriptionResult(
-            transcript: transcript,
+            transcript: Self.transcript(from: snapshot).trimmingCharacters(in: .whitespacesAndNewlines),
             confirmedTranscript: Self.text(of: snapshot.confirmedSegments),
             confirmedEndSeconds: snapshot.confirmedEndSeconds,
             audio: RecordedAudio(samples: audioSamples, sampleRate: Double(WhisperKit.sampleRate))
@@ -240,11 +219,19 @@ final class TranscriptionService {
         loadedModel = nil
     }
 
-    nonisolated private static func transcript(from state: AudioStreamTranscriber.State) -> String {
-        let segmentText = (state.confirmedSegments + state.unconfirmedSegments)
+    nonisolated private static func decodingOptions(for language: TranscriptionLanguage) -> DecodingOptions {
+        DecodingOptions(
+            language: language.whisperKitCode,
+            detectLanguage: language == .auto,
+            skipSpecialTokens: true
+        )
+    }
+
+    nonisolated private static func transcript(from snapshot: StreamSnapshot) -> String {
+        let segmentText = (snapshot.confirmedSegments + snapshot.unconfirmedSegments)
             .map(\.text)
             .filter { !TranscriptText.isLikelyHallucination($0) }
-        let currentText = state.currentText == "Waiting for speech..." ? "" : state.currentText
+        let currentText = snapshot.currentText == "Waiting for speech..." ? "" : snapshot.currentText
 
         return TranscriptText.merged(segmentText + [currentText])
     }
@@ -260,29 +247,29 @@ final class TranscriptionService {
 
 }
 
-// Latest confirmed stream state. Written from WhisperKit's state callback,
-// read on the main actor when the dictation stops.
-private final class StreamSnapshotStore: @unchecked Sendable {
-    nonisolated struct Snapshot: Sendable {
-        var confirmedSegments: [TranscriptionSegment] = []
-        var confirmedEndSeconds: TimeInterval = 0
-    }
+// Latest stream state. Written from WhisperKit's state callback, read on the
+// main actor when the dictation stops.
+private nonisolated struct StreamSnapshot: Sendable {
+    var confirmedSegments: [TranscriptionSegment] = []
+    var unconfirmedSegments: [TranscriptionSegment] = []
+    var currentText = ""
+    var confirmedEndSeconds: TimeInterval = 0
+}
 
-    nonisolated(unsafe) private var snapshot = Snapshot()
+private final class StreamSnapshotStore: @unchecked Sendable {
+    nonisolated(unsafe) private var snapshot = StreamSnapshot()
     private let lock = NSLock()
 
-    nonisolated func update(confirmedSegments: [TranscriptionSegment], confirmedEndSeconds: TimeInterval) {
-        lock.withLock {
-            snapshot = Snapshot(confirmedSegments: confirmedSegments, confirmedEndSeconds: confirmedEndSeconds)
-        }
+    nonisolated func update(_ newSnapshot: StreamSnapshot) {
+        lock.withLock { snapshot = newSnapshot }
     }
 
-    nonisolated func current() -> Snapshot {
+    nonisolated func current() -> StreamSnapshot {
         lock.withLock { snapshot }
     }
 
     nonisolated func reset() {
-        lock.withLock { snapshot = Snapshot() }
+        lock.withLock { snapshot = StreamSnapshot() }
     }
 }
 

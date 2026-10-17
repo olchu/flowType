@@ -20,7 +20,7 @@ final class AudioRecorderService {
     private var engine: AVAudioEngine?
     private var samples: [Float] = []
     private var sampleRate: Double = 0
-    private var isRecording = false
+    private var isRecording: Bool { engine != nil }
     var onLevelChanged: ((Double) -> Void)?
 
     func startRecording() throws {
@@ -71,7 +71,6 @@ final class AudioRecorderService {
         try engine.start()
 
         self.engine = engine
-        isRecording = true
     }
 
     func stopRecording() -> RecordedAudio {
@@ -82,13 +81,12 @@ final class AudioRecorderService {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
-        isRecording = false
         onLevelChanged?(0)
 
-        return RecordedAudio(
-            samples: samples,
-            sampleRate: sampleRate
-        )
+        // Resampled once here so the VAD and the decoders all get audio at
+        // their native rate instead of each converting the whole recording.
+        return RecordedAudio(samples: samples, sampleRate: sampleRate)
+            .resampled(to: RecordedAudio.speechSampleRate)
     }
 
     private func appendSamples(_ newSamples: [Float], level: Double) {

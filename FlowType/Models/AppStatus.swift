@@ -1,6 +1,6 @@
 import Foundation
 
-enum AppStatus: String, CaseIterable, Equatable {
+enum AppStatus: String, Equatable {
     case ready = "Ready"
     case recording = "Recording"
     case transcribing = "Transcribing"

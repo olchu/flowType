@@ -35,12 +35,11 @@ final class ModelStorageService {
         try fileManager.removeItem(at: directory)
     }
 
-    func localDirectory(for model: TranscriptionModel) -> URL? {
+    private func localDirectory(for model: TranscriptionModel) -> URL? {
         guard let identifier = model.whisperKitIdentifier else { return nil }
         return defaultDownloadBase
             .appending(path: "models")
-            .appending(path: "argmaxinc")
-            .appending(path: "whisperkit-coreml")
+            .appending(path: TranscriptionModel.repository)
             .appending(path: identifier)
     }
 

@@ -67,22 +67,27 @@ actor TranscriptCleanupService {
             return "numbers"
         }
 
-        guard !replacesSpokenNumbersWithDigits(original: original, corrected: corrected) else {
+        let originalWords = contentWords(in: original)
+        let correctedWords = contentWords(in: corrected)
+
+        guard !replacesSpokenNumbersWithDigits(
+            originalWords: originalWords,
+            correctedWords: correctedWords,
+            corrected: corrected
+        ) else {
             return "spoken-numbers"
         }
 
-        guard !looksTruncated(corrected: corrected, original: original) else {
+        guard !looksTruncated(originalWords: originalWords, correctedWords: correctedWords) else {
             return "truncated"
         }
 
-        let originalWords = contentWords(in: original)
-        let correctedWords = contentWords(in: corrected)
         guard !originalWords.isEmpty else { return nil }
         guard !correctedWords.isEmpty else { return "no-content" }
 
         // Words the model made up. One per dozen covers fixing a misheard word.
         let inventedWords = correctedWords.filter { word in
-            !originalWords.contains { TranscriptText.isSameWord($0, word) }
+            !originalWords.contains { TranscriptText.wordsMatch($0, word) }
         }
         guard inventedWords.count <= max(1, originalWords.count / 12) else {
             return "invented=\(inventedWords.count)"
@@ -91,13 +96,13 @@ actor TranscriptCleanupService {
         // Words the model removed. A word that is still present elsewhere was a
         // repeat, which is exactly what the model should remove.
         let droppedWords = originalWords.filter { word in
-            !correctedWords.contains { TranscriptText.isSameWord($0, word) }
+            !correctedWords.contains { TranscriptText.wordsMatch($0, word) }
         }
         guard droppedWords.count <= max(1, originalWords.count / 8) else {
             return "dropped=\(droppedWords.count)"
         }
 
-        let orderedMatches = longestCommonSubsequenceCount(originalWords, correctedWords)
+        let orderedMatches = TranscriptText.orderedMatchCount(originalWords, correctedWords)
         guard Double(orderedMatches) >= Double(correctedWords.count) * 0.85 else {
             return "reordered"
         }
@@ -105,25 +110,8 @@ actor TranscriptCleanupService {
         return nil
     }
 
-    nonisolated private static func longestCommonSubsequenceCount(_ lhs: [String], _ rhs: [String]) -> Int {
-        var previousRow = Array(repeating: 0, count: rhs.count + 1)
-
-        for lhsWord in lhs {
-            var currentRow = Array(repeating: 0, count: rhs.count + 1)
-            for rhsIndex in rhs.indices {
-                currentRow[rhsIndex + 1] = TranscriptText.isSameWord(lhsWord, rhs[rhsIndex])
-                    ? previousRow[rhsIndex] + 1
-                    : max(previousRow[rhsIndex + 1], currentRow[rhsIndex])
-            }
-            previousRow = currentRow
-        }
-
-        return previousRow.last ?? 0
-    }
-
     nonisolated private static func protectedNumbers(in text: String) -> Set<String> {
-        let tokens = text.split(separator: " ").map(String.init)
-        return Set(tokens.compactMap { token in
+        Set(TranscriptText.words(in: text).compactMap { token in
             let scalars = token.trimmingCharacters(in: .punctuationCharacters.union(.symbols)).unicodeScalars
             let digits = scalars.filter { CharacterSet.decimalDigits.contains($0) }
             guard digits.count >= 4 else { return nil }
@@ -131,14 +119,17 @@ actor TranscriptCleanupService {
         })
     }
 
-    nonisolated private static func replacesSpokenNumbersWithDigits(original: String, corrected: String) -> Bool {
-        let originalWords = Set(contentWords(in: original))
-        guard !originalWords.isDisjoint(with: russianNumberWords) else {
+    nonisolated private static func replacesSpokenNumbersWithDigits(
+        originalWords: [String],
+        correctedWords: [String],
+        corrected: String
+    ) -> Bool {
+        let originalNumberWords = russianNumberWords.intersection(originalWords)
+        guard !originalNumberWords.isEmpty else {
             return false
         }
 
-        let correctedWords = Set(contentWords(in: corrected))
-        let removedNumberWords = originalWords.intersection(russianNumberWords).subtracting(correctedWords)
+        let removedNumberWords = originalNumberWords.subtracting(correctedWords)
         guard !removedNumberWords.isEmpty else {
             return false
         }
@@ -146,16 +137,10 @@ actor TranscriptCleanupService {
         return corrected.unicodeScalars.contains { CharacterSet.decimalDigits.contains($0) }
     }
 
+    /// Comparable forms of the words that carry content.
     nonisolated private static func contentWords(in text: String) -> [String] {
-        text.split(separator: " ").compactMap { token in
-            let normalized = token
-                .lowercased()
-                .replacingOccurrences(of: "ё", with: "е")
-                .trimmingCharacters(in: .punctuationCharacters.union(.symbols))
-
-            guard normalized.count >= 3 else { return nil }
-            guard normalized.unicodeScalars.contains(where: { CharacterSet.letters.contains($0) }) else { return nil }
-            return normalized
+        TranscriptText.words(in: text).map(TranscriptText.comparableWord).filter { word in
+            word.count >= 3 && word.unicodeScalars.contains { CharacterSet.letters.contains($0) }
         }
     }
 
@@ -172,9 +157,7 @@ actor TranscriptCleanupService {
         "десять", "десятый", "десятая", "десятое"
     ]
 
-    nonisolated private static func looksTruncated(corrected: String, original: String) -> Bool {
-        let originalWords = contentWords(in: original)
-        let correctedWords = contentWords(in: corrected)
+    nonisolated private static func looksTruncated(originalWords: [String], correctedWords: [String]) -> Bool {
         guard let originalLast = originalWords.last, let correctedLast = correctedWords.last else {
             return false
         }

@@ -38,8 +38,8 @@ struct OnboardingView: View {
             }
 
             LabeledContent("Status") {
-                Text(statusText)
-                    .foregroundStyle(statusColor)
+                Text(appState.selectedModelStorageState.label)
+                    .foregroundStyle(appState.selectedModelStorageState.color)
             }
         }
         .padding(16)
@@ -65,49 +65,12 @@ struct OnboardingView: View {
             .disabled(appState.selectedModelStorageState != .downloaded)
 
             Button {
-                appState.downloadSelectedModelFromOnboarding()
+                appState.download(appState.settings.profile.model)
             } label: {
                 Label(downloadButtonTitle, systemImage: downloadButtonIcon)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!canDownload)
-        }
-    }
-
-    private var statusText: String {
-        switch appState.selectedModelStorageState {
-        case .notDownloaded:
-            "Not downloaded"
-        case .downloaded:
-            "Downloaded"
-        case .downloading:
-            "Downloading..."
-        case .deleting:
-            "Deleting..."
-        case .error(let message):
-            message
-        }
-    }
-
-    private var statusColor: Color {
-        switch appState.selectedModelStorageState {
-        case .downloaded:
-            .green
-        case .downloading, .deleting:
-            .orange
-        case .error:
-            .red
-        case .notDownloaded:
-            .secondary
-        }
-    }
-
-    private var canDownload: Bool {
-        switch appState.selectedModelStorageState {
-        case .notDownloaded, .error:
-            true
-        case .downloaded, .downloading, .deleting:
-            false
+            .disabled(!appState.selectedModelStorageState.canDownload)
         }
     }
 
@@ -123,14 +86,7 @@ struct OnboardingView: View {
     }
 
     private var downloadButtonIcon: String {
-        switch appState.selectedModelStorageState {
-        case .downloaded:
-            "checkmark.circle"
-        case .downloading:
-            "arrow.down.circle"
-        default:
-            "arrow.down.circle"
-        }
+        appState.selectedModelStorageState == .downloaded ? "checkmark.circle" : "arrow.down.circle"
     }
 }
 

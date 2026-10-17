@@ -1,25 +1,6 @@
 import Foundation
 
 enum TranscriptText {
-    struct MergeResult {
-        let text: String
-        let decision: String
-        let overlapWords: Int
-        let droppedTailWords: Int
-        let baseWordCount: Int
-        let tailWordCount: Int
-
-        var diagnosticDescription: String {
-            [
-                "decision=\(decision)",
-                "overlapWords=\(overlapWords)",
-                "droppedTailWords=\(droppedTailWords)",
-                "baseWords=\(baseWordCount)",
-                "tailWords=\(tailWordCount)"
-            ].joined(separator: " ")
-        }
-    }
-
     nonisolated static func clean(_ text: String) -> String {
         let normalized = text.replacing(
             /<\|[^|]+\|>/,
@@ -95,115 +76,36 @@ enum TranscriptText {
     ]
 
     nonisolated static func merged(_ pieces: [String]) -> String {
-        pieces.reduce("") { partialResult, piece in
-            mergedResult(base: partialResult, tail: piece).text
-        }
+        pieces.reduce("") { merged(base: $0, tail: $1) }
     }
 
-    nonisolated static func merged(base: String, tail: String) -> String {
-        mergedResult(base: base, tail: tail).text
-    }
-
-    nonisolated static func mergedResult(base: String, tail: String) -> MergeResult {
+    nonisolated private static func merged(base: String, tail: String) -> String {
         let base = clean(base)
         let tail = clean(tail)
+        guard !base.isEmpty else { return tail }
+        guard !tail.isEmpty else { return base }
 
-        guard !base.isEmpty else {
-            return MergeResult(
-                text: tail,
-                decision: "empty-base",
-                overlapWords: 0,
-                droppedTailWords: 0,
-                baseWordCount: 0,
-                tailWordCount: words(in: tail).count
-            )
-        }
-        guard !tail.isEmpty else {
-            return MergeResult(
-                text: base,
-                decision: "empty-tail",
-                overlapWords: 0,
-                droppedTailWords: 0,
-                baseWordCount: words(in: base).count,
-                tailWordCount: 0
-            )
-        }
-
-        let baseWords = words(in: base)
+        let baseComparableWords = words(in: base).map(comparableWord)
         let tailWords = words(in: tail)
-
-        guard !baseWords.isEmpty else {
-            return MergeResult(
-                text: tail,
-                decision: "empty-base-words",
-                overlapWords: 0,
-                droppedTailWords: 0,
-                baseWordCount: 0,
-                tailWordCount: tailWords.count
-            )
-        }
-        guard !tailWords.isEmpty else {
-            return MergeResult(
-                text: base,
-                decision: "empty-tail-words",
-                overlapWords: 0,
-                droppedTailWords: 0,
-                baseWordCount: baseWords.count,
-                tailWordCount: 0
-            )
-        }
-
-        let baseComparableWords = baseWords.map(comparableWord)
         let tailComparableWords = tailWords.map(comparableWord)
 
         if isRedundantTail(tailComparableWords, after: baseComparableWords, minimumWordCount: 1) {
-            return MergeResult(
-                text: base,
-                decision: "redundant-tail",
-                overlapWords: tailWords.count,
-                droppedTailWords: tailWords.count,
-                baseWordCount: baseWords.count,
-                tailWordCount: tailWords.count
-            )
+            return base
         }
 
-        if let overlap = bestAlignedOverlap(base: baseComparableWords, tail: tailComparableWords) {
-            let newTailWords = Array(tailWords.dropFirst(overlap.droppedTailWords))
-            let newTailComparableWords = Array(tailComparableWords.dropFirst(overlap.droppedTailWords))
-
-            if isRedundantTail(newTailComparableWords, after: baseComparableWords, minimumWordCount: 2) {
-                return MergeResult(
-                    text: base,
-                    decision: "aligned-redundant-tail",
-                    overlapWords: overlap.matchedWords,
-                    droppedTailWords: tailWords.count,
-                    baseWordCount: baseWords.count,
-                    tailWordCount: tailWords.count
-                )
-            }
-
-            let newTail = newTailWords.joined(separator: " ")
-            return MergeResult(
-                text: newTail.isEmpty ? base : "\(base) \(newTail)",
-                decision: newTail.isEmpty ? "aligned-empty-tail" : "aligned-overlap",
-                overlapWords: overlap.matchedWords,
-                droppedTailWords: overlap.droppedTailWords,
-                baseWordCount: baseWords.count,
-                tailWordCount: tailWords.count
-            )
+        guard let droppedTailWords = bestAlignedOverlap(base: baseComparableWords, tail: tailComparableWords) else {
+            return "\(base) \(tail)"
         }
 
-        return MergeResult(
-            text: "\(base) \(tail)",
-            decision: "append-tail",
-            overlapWords: 0,
-            droppedTailWords: 0,
-            baseWordCount: baseWords.count,
-            tailWordCount: tailWords.count
-        )
+        let newTailComparableWords = Array(tailComparableWords.dropFirst(droppedTailWords))
+        if isRedundantTail(newTailComparableWords, after: baseComparableWords, minimumWordCount: 2) {
+            return base
+        }
+
+        return "\(base) \(tailWords.dropFirst(droppedTailWords).joined(separator: " "))"
     }
 
-    nonisolated private static func words(in transcript: String) -> [String] {
+    nonisolated static func words(in transcript: String) -> [String] {
         transcript.split(separator: " ").map(String.init)
     }
 
@@ -263,16 +165,11 @@ enum TranscriptText {
     }
 
     nonisolated private static func tokenWithTransferredTerminalPunctuation(previous: String, current: String) -> String? {
-        guard !hasTerminalPunctuation(previous), let punctuation = current.last, isTerminalPunctuation(punctuation) else {
+        guard terminalPunctuation(in: previous) == nil, let punctuation = terminalPunctuation(in: current) else {
             return nil
         }
 
         return "\(previous)\(punctuation)"
-    }
-
-    nonisolated private static func hasTerminalPunctuation(_ token: String) -> Bool {
-        guard let last = token.last else { return false }
-        return isTerminalPunctuation(last)
     }
 
     nonisolated private static func isTerminalPunctuation(_ character: Character) -> Bool {
@@ -345,41 +242,24 @@ enum TranscriptText {
         return last
     }
 
+    nonisolated private static let spokenNumbers = [
+        "ноль", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять", "десять"
+    ]
+
     nonisolated private static func digit(forSpokenNumber word: String) -> Int? {
         switch word {
-        case "ноль": 0
-        case "один", "одна", "одно": 1
-        case "два", "две": 2
-        case "три": 3
-        case "четыре": 4
-        case "пять": 5
-        case "шесть": 6
-        case "семь": 7
-        case "восемь": 8
-        case "девять": 9
-        case "десять": 10
-        default: nil
+        case "одна", "одно": 1
+        case "две": 2
+        default: spokenNumbers.firstIndex(of: word)
         }
     }
 
     nonisolated private static func spokenNumber(forDigit digit: Int) -> String? {
-        switch digit {
-        case 0: "ноль"
-        case 1: "один"
-        case 2: "два"
-        case 3: "три"
-        case 4: "четыре"
-        case 5: "пять"
-        case 6: "шесть"
-        case 7: "семь"
-        case 8: "восемь"
-        case 9: "девять"
-        case 10: "десять"
-        default: nil
-        }
+        spokenNumbers.indices.contains(digit) ? spokenNumbers[digit] : nil
     }
 
-    nonisolated private static func comparableWord(_ word: String) -> String {
+    /// Lowercased, ё-insensitive form of a word without surrounding punctuation.
+    nonisolated static func comparableWord(_ word: String) -> String {
         word
             .lowercased()
             // Whisper commonly alternates between е and ё across overlapping
@@ -423,17 +303,20 @@ enum TranscriptText {
         }
     }
 
-    nonisolated private static func bestAlignedOverlap(base: [String], tail: [String]) -> (droppedTailWords: Int, matchedWords: Int)? {
-        let maxTailPrefix = min(tail.count, 24)
-        let maxBaseSuffix = min(base.count, 28)
-        var best: (droppedTailWords: Int, matchedWords: Int, score: Double)?
+    /// Returns how many leading tail words repeat the end of `base`.
+    nonisolated private static func bestAlignedOverlap(base: [String], tail: [String]) -> Int? {
+        let baseWindow = Array(base.suffix(28))
+        let tailWindow = Array(tail.prefix(24))
+        // `wordsMatch` runs an edit distance; compare every pair only once.
+        let matches = baseWindow.map { baseWord in tailWindow.map { wordsMatch(baseWord, $0) } }
+        var best: (droppedTailWords: Int, score: Double)?
 
-        for tailPrefixCount in stride(from: maxTailPrefix, through: 1, by: -1) {
-            let tailPrefix = Array(tail.prefix(tailPrefixCount))
-
-            for baseSuffixCount in stride(from: maxBaseSuffix, through: 1, by: -1) {
-                let baseSuffix = Array(base.suffix(baseSuffixCount))
-                let matchedWords = alignedMatchCount(baseSuffix, tailPrefix)
+        for tailPrefixCount in stride(from: tailWindow.count, through: 1, by: -1) {
+            for baseSuffixCount in stride(from: baseWindow.count, through: 1, by: -1) {
+                let matchedWords = longestCommonSubsequence(
+                    lhsIndices: (baseWindow.count - baseSuffixCount)..<baseWindow.count,
+                    rhsCount: tailPrefixCount
+                ) { matches[$0][$1] }
 
                 guard acceptsAlignedOverlap(
                     matchedWords: matchedWords,
@@ -447,13 +330,12 @@ enum TranscriptText {
                 let score = coverage + Double(tailPrefixCount) * 0.02 + Double(matchedWords) * 0.04
 
                 if best == nil || score > best!.score {
-                    best = (tailPrefixCount, matchedWords, score)
+                    best = (tailPrefixCount, score)
                 }
             }
         }
 
-        guard let best else { return nil }
-        return (best.droppedTailWords, best.matchedWords)
+        return best?.droppedTailWords
     }
 
     nonisolated private static func acceptsAlignedOverlap(
@@ -477,35 +359,36 @@ enum TranscriptText {
         }
     }
 
-    nonisolated private static func alignedMatchCount(_ base: [String], _ tail: [String]) -> Int {
-        guard !base.isEmpty && !tail.isEmpty else { return 0 }
+    /// Number of words two comparable-word lists share in the same order.
+    nonisolated static func orderedMatchCount(_ lhs: [String], _ rhs: [String]) -> Int {
+        longestCommonSubsequence(lhsIndices: lhs.indices, rhsCount: rhs.count) { wordsMatch(lhs[$0], rhs[$1]) }
+    }
 
-        var previousRow = Array(repeating: 0, count: tail.count + 1)
+    nonisolated private static func longestCommonSubsequence(
+        lhsIndices: Range<Int>,
+        rhsCount: Int,
+        matches: (Int, Int) -> Bool
+    ) -> Int {
+        var previousRow = Array(repeating: 0, count: rhsCount + 1)
 
-        for baseWord in base {
-            var currentRow = Array(repeating: 0, count: tail.count + 1)
+        for lhsIndex in lhsIndices {
+            var currentRow = Array(repeating: 0, count: rhsCount + 1)
 
-            for tailIndex in tail.indices {
-                if wordsMatch(baseWord, tail[tailIndex]) {
-                    currentRow[tailIndex + 1] = previousRow[tailIndex] + 1
-                } else {
-                    currentRow[tailIndex + 1] = max(previousRow[tailIndex + 1], currentRow[tailIndex])
-                }
+            for rhsIndex in 0..<rhsCount {
+                currentRow[rhsIndex + 1] = matches(lhsIndex, rhsIndex)
+                    ? previousRow[rhsIndex] + 1
+                    : max(previousRow[rhsIndex + 1], currentRow[rhsIndex])
             }
 
             previousRow = currentRow
         }
 
-        return previousRow.last ?? 0
+        return previousRow[rhsCount]
     }
 
-    /// Case-, punctuation- and ё-insensitive word comparison that tolerates the
-    /// small inflection differences Whisper produces between decodes.
-    nonisolated static func isSameWord(_ lhs: String, _ rhs: String) -> Bool {
-        wordsMatch(comparableWord(lhs), comparableWord(rhs))
-    }
-
-    nonisolated private static func wordsMatch(_ lhs: String, _ rhs: String) -> Bool {
+    /// Compares two comparable words, tolerating the small inflection
+    /// differences Whisper produces between decodes.
+    nonisolated static func wordsMatch(_ lhs: String, _ rhs: String) -> Bool {
         guard !lhs.isEmpty && !rhs.isEmpty else { return false }
 
         if lhs == rhs || lhs.hasPrefix(rhs) || rhs.hasPrefix(lhs) {

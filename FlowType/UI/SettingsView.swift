@@ -115,9 +115,6 @@ struct SettingsView: View {
                     Text(profile.rawValue).tag(profile)
                 }
             }
-            .onChange(of: appState.settings.profile) {
-                appState.prewarmCurrentModel()
-            }
 
             Text(appState.settings.profile.detail)
                 .font(.caption)
@@ -148,7 +145,7 @@ struct SettingsView: View {
                 }
             }
 
-            ForEach(TranscriptionModel.availableModels) { model in
+            ForEach(TranscriptionModel.allCases) { model in
                 modelRow(for: model)
             }
         }
@@ -228,6 +225,13 @@ struct SettingsView: View {
 
     private var indicatorSection: some View {
         Section("Indicator") {
+            Picker("Recording animation", selection: $appState.settings.indicatorStyle) {
+                ForEach(IndicatorStyle.allCases) { style in
+                    Text(style.rawValue).tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
+
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Microphone sensitivity")
@@ -247,7 +251,7 @@ struct SettingsView: View {
                 }
             }
 
-            Text("Lower values ignore more background noise. Higher values make the bars react to quieter speech.")
+            Text("Lower values ignore more background noise. Higher values make the indicator react to quieter speech.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -278,7 +282,7 @@ struct SettingsView: View {
 
     private var resetSection: some View {
         Section("Reset") {
-            Text("Restore default profile, language, paste behavior, and indicator sensitivity. Downloaded models and permissions are not changed.")
+            Text("Restore default profile, language, paste behavior, and indicator settings. Downloaded models and permissions are not changed.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -291,7 +295,7 @@ struct SettingsView: View {
     }
 
     private func modelRow(for model: TranscriptionModel) -> some View {
-        let state = appState.modelStorageStates[model] ?? .notDownloaded
+        let state = appState.storageState(of: model)
         let isCurrent = appState.settings.profile.model == model
 
         return VStack(alignment: .leading, spacing: 8) {
@@ -300,7 +304,7 @@ struct SettingsView: View {
                     Text(model.rawValue)
                         .font(.headline)
 
-                    Text(model.whisperKitIdentifier ?? "FluidInference/parakeet-ultra-coreml")
+                    Text(model.sourceName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -309,7 +313,7 @@ struct SettingsView: View {
 
                 Text(isCurrent ? "Selected" : state.label)
                     .font(.caption)
-                    .foregroundStyle(color(for: state, isCurrent: isCurrent))
+                    .foregroundStyle(isCurrent ? Color.accentColor : state.color)
             }
 
             HStack {
@@ -318,14 +322,14 @@ struct SettingsView: View {
                 } label: {
                     Label("Download", systemImage: "arrow.down.circle")
                 }
-                .disabled(state == .downloaded || state == .downloading || state == .deleting)
+                .disabled(!state.canDownload)
 
                 Button(role: .destructive) {
                     appState.delete(model)
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
-                .disabled(state != .downloaded || state == .deleting)
+                .disabled(state != .downloaded)
             }
         }
         .padding(.vertical, 4)
@@ -335,21 +339,28 @@ struct SettingsView: View {
         Text(text)
             .foregroundStyle(granted ? Color.green : Color.red)
     }
+}
 
-    private func color(for state: ModelStorageState, isCurrent: Bool) -> Color {
-        if isCurrent {
-            return .accentColor
-        }
-
-        switch state {
+extension ModelStorageState {
+    var color: Color {
+        switch self {
         case .downloaded:
-            return .green
+            .green
         case .notDownloaded:
-            return .secondary
+            .secondary
         case .downloading, .deleting:
-            return .orange
+            .orange
         case .error:
-            return .red
+            .red
+        }
+    }
+
+    var canDownload: Bool {
+        switch self {
+        case .notDownloaded, .error:
+            true
+        case .downloaded, .downloading, .deleting:
+            false
         }
     }
 }

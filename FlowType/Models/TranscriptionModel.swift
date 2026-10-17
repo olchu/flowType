@@ -5,20 +5,13 @@ enum TranscriptionEngine {
     case parakeet
 }
 
-enum TranscriptionModel: String, Hashable, Identifiable {
+enum TranscriptionModel: String, CaseIterable, Identifiable {
     case tiny = "Tiny"
     case largeV3TurboCompact = "Large v3 Turbo 632MB"
     case largeV3 = "Large v3"
     case parakeetUltra = "Parakeet Ultra 630MB"
 
     static let repository = "argmaxinc/whisperkit-coreml"
-
-    static let availableModels: [TranscriptionModel] = [
-        .tiny,
-        .largeV3TurboCompact,
-        .largeV3,
-        .parakeetUltra,
-    ]
 
     var id: String { rawValue }
 
@@ -35,6 +28,16 @@ enum TranscriptionModel: String, Hashable, Identifiable {
     /// finished recording, which is faster than Whisper's tail re-decode.
     var supportsStreaming: Bool {
         engine == .whisperKit
+    }
+
+    /// Whisper invents text for trailing silence, so it is cut before decoding.
+    /// Parakeet does not, and keeps the whole recording.
+    var trimsTrailingSilence: Bool {
+        engine == .whisperKit
+    }
+
+    var sourceName: String {
+        whisperKitIdentifier ?? "FluidInference/parakeet-ultra-coreml"
     }
 
     var whisperKitIdentifier: String? {

@@ -16,7 +16,6 @@ final class HotkeyService {
 
     var onKeyDown: (() -> Void)?
     var onKeyUp: (() -> Void)?
-    private(set) var isRunning = false
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -54,7 +53,6 @@ final class HotkeyService {
 
         self.eventTap = eventTap
         self.runLoopSource = runLoopSource
-        isRunning = true
     }
 
     func stop() {
@@ -68,7 +66,6 @@ final class HotkeyService {
 
         runLoopSource = nil
         eventTap = nil
-        isRunning = false
         isPressed = false
         onKeyDown = nil
         onKeyUp = nil

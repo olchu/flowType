@@ -7,101 +7,60 @@ final class FloatingIndicatorController {
     private let model = FloatingIndicatorModel()
     private var hideTask: Task<Void, Never>?
     private var isDismissalInProgress = false
-    private let dismissalDuration: Duration = .milliseconds(190)
+    private var style: IndicatorStyle = .bars
+    /// Waves collapse into the orb and fade, which takes longer than the pill.
+    private var dismissalDuration: Duration {
+        style == .waves ? .milliseconds(520) : .milliseconds(190)
+    }
 
-    func update(
-        for status: AppStatus,
-        isModelLoading: Bool,
-        audioLevel: Double = 0,
-        microphoneSensitivity: Double = 0.5
-    ) {
-        let shouldReplayPresentation = isDismissalInProgress
+    func update(for status: AppStatus, isModelLoading: Bool, audioLevel: Double = 0, style: IndicatorStyle) {
+        self.style = style
+        let forceNewPresentation = isDismissalInProgress
         cancelPendingHide()
 
         if isModelLoading {
-            showLoading(forceNewPresentation: shouldReplayPresentation)
+            present(.loading, forceNewPresentation: forceNewPresentation)
             return
         }
 
         switch status {
         case .recording, .transcribing:
-            show(
-                status,
-                audioLevel: audioLevel,
-                microphoneSensitivity: microphoneSensitivity,
-                forceNewPresentation: shouldReplayPresentation
-            )
+            present(.status(status), audioLevel: audioLevel, forceNewPresentation: forceNewPresentation)
         case .ready:
-            hide()
+            beginDismissal()
         case .error:
-            if panel?.isVisible == true {
-                show(
-                    status,
-                    audioLevel: audioLevel,
-                    microphoneSensitivity: microphoneSensitivity,
-                    forceNewPresentation: shouldReplayPresentation
-                )
-                scheduleHide()
-            }
+            guard panel?.isVisible == true else { return }
+            present(.status(status), audioLevel: audioLevel, forceNewPresentation: forceNewPresentation)
+            scheduleHide(after: .milliseconds(850))
         }
     }
 
     func showPasted() {
-        let shouldReplayPresentation = isDismissalInProgress
+        let forceNewPresentation = isDismissalInProgress
         cancelPendingHide()
 
-        let panel = panel ?? makePanel()
-        let startsNewPresentation = !panel.isVisible || shouldReplayPresentation
-
-        model.updateMomentaryStatus(.pasted, startsNewPresentation: startsNewPresentation)
-
-        position(panel)
-        panel.orderFrontRegardless()
-        self.panel = panel
+        present(.pasted, forceNewPresentation: forceNewPresentation)
         scheduleHide(after: .milliseconds(650))
     }
 
-    private func showLoading(forceNewPresentation: Bool = false) {
-        let panel = panel ?? makePanel()
-        let startsNewPresentation = !panel.isVisible || forceNewPresentation
-
-        model.updateLoading(startsNewPresentation: startsNewPresentation)
-
-        position(panel)
-        panel.orderFrontRegardless()
-        self.panel = panel
-    }
-
-    private func show(
-        _ status: AppStatus,
-        audioLevel: Double,
-        microphoneSensitivity: Double,
-        forceNewPresentation: Bool = false
+    private func present(
+        _ content: FloatingIndicatorModel.Content,
+        audioLevel: Double = 0,
+        forceNewPresentation: Bool
     ) {
         let panel = panel ?? makePanel()
+        self.panel = panel
         let startsNewPresentation = !panel.isVisible || forceNewPresentation
 
-        model.update(
-            status: status,
-            audioLevel: audioLevel,
-            microphoneSensitivity: microphoneSensitivity,
-            startsNewPresentation: startsNewPresentation
-        )
+        model.show(content, audioLevel: audioLevel, style: style, startsNewPresentation: startsNewPresentation)
 
         position(panel)
-        panel.orderFrontRegardless()
-        self.panel = panel
-    }
-
-    private func hide() {
-        beginDismissal(cancelExistingTask: true)
-    }
-
-    private func beginDismissal(cancelExistingTask: Bool) {
-        if cancelExistingTask {
-            hideTask?.cancel()
+        if startsNewPresentation {
+            panel.orderFrontRegardless()
         }
+    }
 
+    private func beginDismissal() {
         guard panel?.isVisible == true else {
             panel?.orderOut(nil)
             return
@@ -113,10 +72,8 @@ final class FloatingIndicatorController {
         hideTask = Task { [weak self] in
             try? await Task.sleep(for: dismissalDuration)
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self?.isDismissalInProgress = false
-                self?.panel?.orderOut(nil)
-            }
+            self?.isDismissalInProgress = false
+            self?.panel?.orderOut(nil)
         }
     }
 
@@ -126,23 +83,17 @@ final class FloatingIndicatorController {
         isDismissalInProgress = false
     }
 
-    private func scheduleHide() {
-        scheduleHide(after: .milliseconds(850))
-    }
-
     private func scheduleHide(after delay: Duration) {
         hideTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self?.beginDismissal(cancelExistingTask: false)
-            }
+            self?.beginDismissal()
         }
     }
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 72, height: 22),
+            contentRect: NSRect(origin: .zero, size: style.indicatorSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -168,12 +119,17 @@ final class FloatingIndicatorController {
     private func position(_ panel: NSPanel) {
         guard let screen = NSScreen.main else { return }
 
-        let size = panel.contentView?.fittingSize ?? NSSize(width: 72, height: 22)
-        let dockAwareBottomInset: CGFloat = 20
+        // The waves frame has a transparent glow margin, so it can dip
+        // slightly behind the Dock and still keep the lines above it.
+        let dockAwareBottomInset: CGFloat = style == .waves ? -10 : 20
+        let size = style.indicatorSize
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - size.width / 2
         let y = visibleFrame.minY + dockAwareBottomInset
+        let frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
 
-        panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)
+        // Called on every audio level update while recording.
+        guard panel.frame != frame else { return }
+        panel.setFrame(frame, display: true)
     }
 }
