@@ -452,7 +452,7 @@ final class WaveEngine {
         case .listening:
             targetLevel = audioLevel
         case .processing:
-            targetLevel = 0.1 + 0.05 * sin(time * 2.2)
+            targetLevel = 0.1 + 0.05 * sin(time * 4.4)
         case .pasted:
             targetLevel = 0
             if pastedAt == nil {
@@ -460,18 +460,20 @@ final class WaveEngine {
             }
         }
         level = Self.ease(level, toward: targetLevel, rate: targetLevel > level ? 35 : 10, elapsed: elapsed)
-        clock += elapsed * (1 + 1.8 * level)
-        scanAmount = Self.ease(scanAmount, toward: mode == .processing ? 1 : 0, rate: 6, elapsed: elapsed)
+        // Waves drift twice as fast while processing, so the wait feels short.
+        clock += elapsed * (1 + 1.8 * level) * (mode == .processing ? 2 : 1)
+        scanAmount = Self.ease(scanAmount, toward: mode == .processing ? 1 : 0, rate: 12, elapsed: elapsed)
 
         // The orb pops in, then stretches into waves; dismissal reverses it.
         if let dismissedAt {
-            spread = Self.ease(spread, toward: 0, rate: 12, elapsed: elapsed)
-            let target = time - dismissedAt > 0.22 ? 0.0 : 1.0
-            visibility = Self.ease(visibility, toward: target, rate: 16, elapsed: elapsed)
+            spread = Self.ease(spread, toward: 0, rate: 20, elapsed: elapsed)
+            let target = time - dismissedAt > 0.12 ? 0.0 : 1.0
+            visibility = Self.ease(visibility, toward: target, rate: 26, elapsed: elapsed)
         } else {
-            let target = time - presentedAt > 0.12 ? 1.0 : 0.0
-            spread = Self.ease(spread, toward: target, rate: 10, elapsed: elapsed)
-            visibility = Self.ease(visibility, toward: 1, rate: 22, elapsed: elapsed)
+            // Kept short: the waves only react to the voice once spread out.
+            let target = time - presentedAt > 0.02 ? 1.0 : 0.0
+            spread = Self.ease(spread, toward: target, rate: 30, elapsed: elapsed)
+            visibility = Self.ease(visibility, toward: 1, rate: 40, elapsed: elapsed)
         }
 
         return Frame(
@@ -480,7 +482,7 @@ final class WaveEngine {
             spread: spread,
             visibility: visibility,
             flash: pastedAt.map { exp(-(time - $0) * 5) } ?? 0,
-            scan: sin(time * 2.4),
+            scan: sin(time * 4.8),
             scanAmount: scanAmount
         )
     }

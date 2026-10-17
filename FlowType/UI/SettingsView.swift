@@ -12,6 +12,7 @@ struct SettingsView: View {
                 modelsSection
                 transcriptionSection
                 indicatorSection
+                soundsSection
                 pasteSection
                 hotkeySection
                 resetSection
@@ -243,6 +244,40 @@ struct SettingsView: View {
         }
     }
 
+    private var soundsSection: some View {
+        Section("Sounds") {
+            Toggle("Play feedback sounds", isOn: $appState.settings.playsSounds)
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Volume")
+
+                    Spacer()
+
+                    Text("\(Int(appState.settings.soundVolume * 100))%")
+                        .foregroundStyle(.secondary)
+                }
+
+                Slider(value: $appState.settings.soundVolume, in: 0...1) {
+                    EmptyView()
+                } minimumValueLabel: {
+                    Image(systemName: "speaker")
+                } maximumValueLabel: {
+                    Image(systemName: "speaker.wave.3")
+                } onEditingChanged: { isEditing in
+                    if !isEditing {
+                        appState.previewFeedbackSound()
+                    }
+                }
+            }
+            .disabled(!appState.settings.playsSounds)
+
+            Text("Sounds mark the start and end of recording and a successful paste.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var hotkeySection: some View {
         Section("Hotkey") {
             LabeledContent("Key") {
@@ -268,7 +303,7 @@ struct SettingsView: View {
 
     private var resetSection: some View {
         Section("Reset") {
-            Text("Restore default profile, language, paste behavior, and indicator settings. Downloaded models and permissions are not changed.")
+            Text("Restore default profile, language, paste behavior, indicator and sound settings. Downloaded models and permissions are not changed.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

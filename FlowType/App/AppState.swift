@@ -62,6 +62,10 @@ final class AppState: ObservableObject {
     private var dictationTargetApplication: NSRunningApplication?
     private var resourceUsageTask: Task<Void, Never>?
     private var streamingTranscriptionTask: Task<Void, Never>?
+    /// The start cue plays through the speakers and reaches the microphone;
+    /// until its loud part ends the indicator would show it as speech.
+    private static let startCueMaskDuration: Duration = .milliseconds(450)
+    private var startCueMaskEnd: ContinuousClock.Instant?
     /// Smoothed microphone level; goes straight to the indicator, bypassing
     /// the status update path because it changes at buffer rate.
     private var audioLevel: Double = 0 {
@@ -163,7 +167,8 @@ final class AppState: ObservableObject {
 
         dictationTargetApplication = NSWorkspace.shared.frontmostApplication
         status = .recording
-        feedbackSoundPlayer.play(.recordingStarted)
+        playFeedback(.recordingStarted)
+        startCueMaskEnd = settings.playsSounds ? .now + Self.startCueMaskDuration : nil
 
         streamingTranscriptionTask?.cancel()
         streamingTranscriptionTask = Task { [weak self] in
@@ -185,7 +190,7 @@ final class AppState: ObservableObject {
 
         audioLevel = 0
         status = .transcribing
-        feedbackSoundPlayer.play(.recordingStopped)
+        playFeedback(.recordingStopped)
 
         Task {
             let timing = DictationTiming()
@@ -235,7 +240,7 @@ final class AppState: ObservableObject {
                         into: dictationTargetApplication
                     )
                     timing.mark("paste completed")
-                    feedbackSoundPlayer.play(.pasted)
+                    playFeedback(.pasted)
                 } catch {
                     showError(error)
                     timing.finish("paste failed")
@@ -387,6 +392,10 @@ final class AppState: ObservableObject {
     }
 
     private func updateAudioLevel(_ level: Double) {
+        if let startCueMaskEnd, ContinuousClock.now < startCueMaskEnd {
+            return
+        }
+
         let clampedLevel = min(1, max(0, level))
         let smoothing = clampedLevel > audioLevel ? 0.6 : 0.3
         audioLevel += (clampedLevel - audioLevel) * smoothing
@@ -545,6 +554,16 @@ final class AppState: ObservableObject {
         refreshLaunchAtLoginStatus()
     }
 
+    /// Lets the volume slider be judged by ear.
+    func previewFeedbackSound() {
+        playFeedback(.recordingStarted)
+    }
+
+    private func playFeedback(_ sound: FeedbackSound) {
+        guard settings.playsSounds else { return }
+        feedbackSoundPlayer.play(sound, volume: settings.soundVolume)
+    }
+
     func resetSettingsToDefaults() {
         settings = AppSettings()
     }
@@ -634,12 +653,14 @@ private enum FeedbackSound: CaseIterable {
         }
     }
 
-    var volume: Float {
+    /// Player volume at the top of the volume slider; the default slider
+    /// position plays at half of it.
+    var maximumVolume: Float {
         switch self {
         case .recordingStarted, .recordingStopped:
-            0.35
+            0.36
         case .pasted:
-            0.45
+            0.5
         }
     }
 }
@@ -662,7 +683,8 @@ private final class FeedbackSoundPlayer {
         }
     }
 
-    func play(_ sound: FeedbackSound) {
+    /// - Parameter volume: The user's volume setting, 0...1.
+    func play(_ sound: FeedbackSound, volume: Double) {
         for (other, player) in players where other != sound && player.isPlaying {
             player.setVolume(0, fadeDuration: Self.handoffFade)
         }
@@ -673,7 +695,7 @@ private final class FeedbackSoundPlayer {
         }
         player.stop()
         player.currentTime = 0
-        player.volume = sound.volume
+        player.volume = sound.maximumVolume * Float(min(max(volume, 0), 1))
         player.play()
     }
 }

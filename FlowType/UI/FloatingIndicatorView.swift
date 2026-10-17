@@ -127,14 +127,14 @@ struct FloatingIndicatorView: View {
         showsContent = false
         isExpanded = false
 
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(.easeOut(duration: 0.12)) {
             isExpanded = true
         }
 
         animationTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(170))
+            try? await Task.sleep(for: .milliseconds(100))
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.08)) {
+            withAnimation(.easeOut(duration: 0.06)) {
                 showsContent = true
             }
         }
@@ -228,7 +228,7 @@ private struct TranscribingDotsView: View {
     }
 
     private func pulse(for index: Int, time: TimeInterval) -> Double {
-        let phase = time * 5.2 - Double(index) * 0.58
+        let phase = time * 10.4 - Double(index) * 0.58
         return (sin(phase) + 1) / 2
     }
 }
@@ -301,7 +301,20 @@ extension IndicatorStyle {
         case .bars:
             0.19
         case .waves:
-            0.52
+            0.32
+        }
+    }
+
+    /// How long the pasted confirmation stays before the dismissal starts.
+    /// The pill needs time to pop open and bounce the checkmark; the waves
+    /// flash fades within 0.2 s, so they collapse almost at once and the
+    /// flash plays out during the collapse.
+    var pastedHoldDuration: Duration {
+        switch self {
+        case .bars:
+            .milliseconds(650)
+        case .waves:
+            .milliseconds(100)
         }
     }
 }

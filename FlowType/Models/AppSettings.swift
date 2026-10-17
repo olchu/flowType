@@ -89,6 +89,9 @@ struct AppSettings: Codable, Equatable {
     var microphoneSensitivity = 0.5
     var indicatorStyle: IndicatorStyle = .bars
     var waveColor: WaveColor = .blue
+    var playsSounds = true
+    /// Scales every feedback cue; 0.5 is the recommended level.
+    var soundVolume = 0.5
 
     init() {}
 
@@ -105,5 +108,7 @@ struct AppSettings: Codable, Equatable {
         microphoneSensitivity = try container.decodeIfPresent(Double.self, forKey: .microphoneSensitivity) ?? defaults.microphoneSensitivity
         indicatorStyle = (try? container.decodeIfPresent(IndicatorStyle.self, forKey: .indicatorStyle)) ?? defaults.indicatorStyle
         waveColor = (try? container.decodeIfPresent(WaveColor.self, forKey: .waveColor)) ?? defaults.waveColor
+        playsSounds = try container.decodeIfPresent(Bool.self, forKey: .playsSounds) ?? defaults.playsSounds
+        soundVolume = try container.decodeIfPresent(Double.self, forKey: .soundVolume) ?? defaults.soundVolume
     }
 }

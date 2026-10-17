@@ -36,7 +36,7 @@ final class FloatingIndicatorController {
     func showPasted() {
         cancelPendingHide()
         present(.pasted, style: model.style, waveColor: model.waveColor)
-        scheduleHide(after: .milliseconds(650))
+        scheduleHide(after: model.style.pastedHoldDuration)
     }
 
     /// Separate from `update`: the level changes at buffer rate and only the
