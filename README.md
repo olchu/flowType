@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Docs/images/hero.png" alt="FlowType — local voice dictation for macOS" width="100%">
+  <img src="Docs/images/hero.png" alt="FlowType, voice dictation that runs on your Mac" width="100%">
 </p>
 
 # FlowType
@@ -9,21 +9,20 @@
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-on--device-blue)](#privacy)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**FlowType** is a free, open-source macOS menu bar app for dictating text into any app.
-Hold `Fn`, speak, release — and the recognised text is pasted wherever your cursor is.
+FlowType is a free, open-source menu bar app that lets you dictate into any app on your Mac. Hold `Fn`, speak, let go, and the text is pasted wherever your cursor is.
 
-Recognition runs **entirely on your Mac**: audio never leaves the device and is never written to disk. The network is only needed once, to download the models.
+Recognition runs on your Mac, with Whisper or NVIDIA Parakeet. Your audio stays in memory and is never written to disk, and the app needs the network only once, to download the models.
 
 ## How it works
 
 <p align="center">
-  <img src="Docs/images/how-it-works.png" alt="Hold Fn → speak → release → text is pasted" width="100%">
+  <img src="Docs/images/how-it-works.png" alt="Hold Fn, speak, release, and the text is pasted" width="100%">
 </p>
 
-1. **Hold `Fn`.** Recording starts in any app, a short cue plays and the indicator appears above the Dock.
-2. **Speak.** The indicator reacts to your voice. Whisper models transcribe while you talk.
-3. **Release `Fn`.** Silence is trimmed, the remaining tail is decoded and the text is cleaned up.
-4. **The text is pasted** into the field that had focus. Your previous clipboard contents are restored.
+1. Hold `Fn` in any app. A short cue plays and the indicator appears above the Dock.
+2. Speak. The indicator follows your voice, and Whisper models start transcribing while you're still talking.
+3. Release `Fn`. FlowType trims the silence, decodes the remaining tail and cleans up the text.
+4. The text is pasted into the field that had focus, and your clipboard gets its previous contents back.
 
 If you press `Fn` and say nothing, nothing is pasted: the speech detector drops empty recordings.
 
@@ -33,79 +32,83 @@ If you press `Fn` and say nothing, nothing is pasted: the speech detector drops 
 
 | Profile | Model | When to use |
 |---|---|---|
-| **Fast** | Whisper Tiny | Quick start, lower accuracy |
-| **Balanced** *(default)* | Whisper Large v3 Turbo, 632 MB | Good accuracy at a small size |
-| **Accurate** | Whisper Large v3, 947 MB | Best Whisper accuracy, slower start |
-| **Parakeet** | NVIDIA Parakeet TDT Ultra, 630 MB | Fastest; accurate on Russian, English and 23 more European languages |
+| Fast | Whisper Tiny | Quick start, lower accuracy |
+| Balanced *(default)* | Whisper Large v3 Turbo, 632 MB | Good accuracy at a small size |
+| Accurate | Whisper Large v3, 947 MB | Best Whisper accuracy, slower start |
+| Parakeet | NVIDIA Parakeet TDT Ultra, 630 MB | Fastest; accurate on Russian, English and 23 more European languages |
 
-- **Language:** auto-detect, Russian or English.
-- **Streaming recognition (Whisper).** Text is recognised while you record, so there is very little to wait for after releasing `Fn`. The finalization mode is configurable:
-  - *Stream + tail* — keeps the confirmed streaming text and re-decodes only the tail;
-  - *Full recording* — transcribes the whole recording after the key is released (the baseline for comparison);
-  - *Stream only* — streaming text only; the fastest, but the last words are less reliable.
-- **Parakeet** runs on the Neural Engine and decodes the whole recording in a fraction of a second, with no streaming preview.
-- **Silero VAD** checks whether a recording contains speech and trims silence; otherwise Whisper tends to hallucinate subtitle phrases such as "To be continued..." on silent audio.
-- The model is warmed up in advance and stays in memory. Loading progress is shown in the menu and in Settings.
+The language can be set to auto-detect, Russian or English.
+
+Whisper recognises speech while you're still recording, so there's very little left to wait for once you release `Fn`. You choose how the final text is produced:
+
+- *Stream + tail* keeps the confirmed streaming text and re-decodes only the tail.
+- *Full recording* transcribes the whole recording after you release the key. It's the baseline the other modes are compared against.
+- *Stream only* uses the streaming text as is. It's the fastest mode, but the last words are less reliable.
+
+Parakeet runs on the Neural Engine and decodes the whole recording in a fraction of a second. It has no streaming preview.
+
+Silero VAD checks whether a recording contains speech and trims the silence. Without that check, Whisper tends to hallucinate subtitle lines like "To be continued..." on silent audio.
+
+The model is warmed up in advance and stays in memory, with loading progress shown in the menu and in Settings.
 
 ### Text cleanup
 
-- **Local rules** *(default)* — fast built-in rules that remove repeated fragments and typical Whisper artefacts.
-- **Local LLM** — the rules plus a small on-device language model on [MLX](https://github.com/ml-explore/mlx-swift-lm) that fixes punctuation and obvious recognition errors. An edit is rejected if the model adds or drops words, so what you said is never changed.
+The default mode, *Local rules*, is a set of fast built-in rules that remove repeated fragments and typical Whisper artefacts. *Off* leaves only basic cleanup.
 
-  | Model | Size | Notes |
-  |---|---|---|
-  | Qwen2.5 1.5B | 0.9 GB | Fastest, best for short phrases |
-  | Qwen3.5 2B | 1.7 GB | Noticeably better with Russian |
-  | Qwen3 4B | 2.3 GB | Most careful edits, about twice as slow |
-  | Gemma 4 E2B | 3.6 GB | Strong multilingual model from Google |
+*Local LLM* applies the same rules and then runs a small language model on your Mac, built on [MLX](https://github.com/ml-explore/mlx-swift-lm), to fix punctuation and obvious recognition errors. If its edit adds or drops more than a stray word, FlowType throws it out and keeps the rule-based text.
 
-- **Off** — basic cleanup only.
+| Model | Size | Notes |
+|---|---|---|
+| Qwen2.5 1.5B | 0.9 GB | Fastest, best for short phrases |
+| Qwen3.5 2B | 1.7 GB | Noticeably better with Russian |
+| Qwen3 4B | 2.3 GB | Most careful edits, about twice as slow |
+| Gemma 4 E2B | 3.6 GB | Strong multilingual model from Google |
 
 ### Pasting
 
-- The text is put on the clipboard and pasted with `⌘V` into the app where you started dictating.
-- The clipboard is restored after pasting (can be turned off).
-- If `⌘V` fails, the text is inserted through the Accessibility API. If that fails too, it stays on the clipboard.
-- **Parallels Desktop** is handled separately, since it syncs the clipboard with the guest OS asynchronously.
-- Auto-paste can be turned off, in which case the text is only copied.
+FlowType puts the text on the clipboard, pastes it with `⌘V` into the app where you started dictating, then restores your previous clipboard (you can turn that off). If `⌘V` fails, the text is inserted through the Accessibility API, and if that fails too, it stays on the clipboard.
+
+Parallels Desktop gets its own handling, because it syncs the clipboard with the guest OS asynchronously. With auto-paste off, the text is only copied.
 
 ### Recording indicator
 
 <p align="center">
-  <img src="Docs/images/indicators.png" alt="Waves and Bars indicators" width="100%">
+  <img src="Docs/images/indicators.png" alt="The Waves and Bars indicator styles" width="100%">
 </p>
 
-- **Waves** — glowing waves that open out of an orb, react to your voice, carry a travelling pulse of light while processing and flash on paste. Five colour themes: blue, red, yellow, green and violet. Drawn with Core Animation instead of SwiftUI's Metal renderer, so they use almost no GPU memory.
-- **Bars** — a compact pill with level bars, dots while transcribing and a checkmark after pasting.
-- **Microphone sensitivity** is adjustable: at low values the indicator ignores background noise.
-- The indicator appears almost instantly and collapses right after the paste instead of lingering on screen.
+Waves is a set of glowing waves that open out of an orb and react to your voice. While the text is being processed, a pulse of light travels along them, and they flash when it's pasted. They come in five colours: blue, red, yellow, green and violet. The waves are drawn with Core Animation instead of SwiftUI's Metal renderer, which keeps their GPU memory use close to zero.
+
+Bars is a compact pill with level bars. It shows dots while transcribing and a checkmark after pasting.
+
+Either style appears almost instantly and collapses right after the paste. Microphone sensitivity is adjustable, and at low values the indicator ignores background noise.
 
 ### Sounds
 
-- Short cues mark the start and end of recording and a successful paste, so you don't need to watch the screen.
-- The volume is adjustable with a slider, and sounds can be turned off entirely. Each cue has a play button for previewing it.
-- While the start cue plays, the indicator doesn't mistake it for your voice. With sounds off, the waves react to speech straight away.
+Short cues play when recording starts and stops and when the text is pasted, so you know where you are without glancing at the indicator. You can adjust the volume or turn sounds off, and preview each cue with its play button.
+
+The indicator doesn't mistake the start cue for your voice. With sounds off, the waves react to speech straight away.
 
 ### Menu and settings
 
 <p align="center">
-  <img src="Docs/images/settings.png" alt="Settings window: Models and Indicator panes" width="100%">
+  <img src="Docs/images/settings.png" alt="The Settings window with the Models and Indicator panes" width="100%">
 </p>
 
-- The menu shows the status, model loading progress, and the CPU and memory used by the app.
-- Settings live in one window with a sidebar, like System Settings:
-  - **General** — hotkey, auto-paste and clipboard restore, open at login, reset settings;
-  - **Permissions** — microphone and Accessibility; changes made in System Settings are picked up automatically;
-  - **Models** — profile choice, model download and deletion, loading progress of the active model;
-  - **Transcription** — language, streaming mode and text cleanup;
-  - **Indicator** — style, colour and sensitivity, with a live preview of the indicator;
-  - **Sounds** — on/off, volume and cue previews.
-- On first launch, an onboarding window offers to download the recommended model.
+The menu shows the current status, model loading progress, and the CPU and memory FlowType is using. Settings live in one window with a sidebar, the way System Settings does it:
+
+- General: hotkey, auto-paste and clipboard restore, open at login, reset settings.
+- Permissions: microphone and Accessibility. Changes you make in System Settings are picked up automatically.
+- Models: profile choice, model download and deletion, loading progress of the active model.
+- Transcription: language, streaming mode and text cleanup.
+- Indicator: style, colour and sensitivity, with a live preview.
+- Sounds: on/off, volume and cue previews.
+
+On first launch, an onboarding window offers to download the recommended model.
 
 ## Under the hood
 
 <p align="center">
-  <img src="Docs/images/pipeline.png" alt="Record → detect speech → transcribe → clean up → paste" width="100%">
+  <img src="Docs/images/pipeline.png" alt="Record, detect speech, transcribe, clean up, paste" width="100%">
 </p>
 
 | Stage | Technology |
@@ -133,7 +136,7 @@ FlowType/
 - macOS 14.0 or later
 - Apple Silicon Mac (recommended)
 - Xcode 16 or later to build
-- Permissions: **Microphone** for recording and **Accessibility** for the global hotkey and pasting
+- Microphone permission for recording, and Accessibility for the global hotkey and pasting
 
 ## Build and run
 
@@ -143,7 +146,7 @@ cd flowType
 open FlowType.xcodeproj
 ```
 
-Swift packages are resolved automatically. Run the `FlowType` scheme. On first launch:
+Xcode resolves the Swift packages automatically. Run the `FlowType` scheme, then on first launch:
 
 1. Grant Microphone and Accessibility access (*Settings → Permissions*).
 2. Download a model in the onboarding window or in *Settings → Models*.
@@ -159,11 +162,11 @@ scripts/build_dmg.sh
 
 The script builds Release and puts the image at `dist/Flow Type-<version>.dmg`.
 
-> The build is signed with an Apple Development certificate and is not notarized, so Gatekeeper blocks it on first launch on another Mac. Open the app with right-click → *Open*, or click *Open Anyway* in *System Settings → Privacy & Security*.
+> The build is signed with an Apple Development certificate and isn't notarized, so Gatekeeper blocks it the first time it's opened on another Mac. Open the app with right-click → *Open*, or click *Open Anyway* in *System Settings → Privacy & Security*.
 
 ### Debugging text cleanup
 
-LLM cleanup can be run from the command line without recording:
+You can run LLM cleanup from the command line without recording anything:
 
 ```bash
 # warm up (and download if needed) the cleanup model
@@ -175,27 +178,25 @@ LLM cleanup can be run from the command line without recording:
 
 ### Tuning the waves look
 
-A hidden **Wave Tuner** editor is available for design work. Open *Settings → Indicator* and quickly press `⌥` three times — a *Fine-tune…* button appears. The editor lets you toggle every layer (halo, glow, lines, orb, additive blending) and adjust its parameters while watching the result on white, gray and dark backgrounds. Values are saved and applied to the real indicator. The defaults live in `FlowType/UI/WaveAppearance.swift`.
+The Wave Tuner is a hidden editor for design work. Open *Settings → Indicator* and press `⌥` three times quickly, and a *Fine-tune…* button appears. In the editor you can switch each layer on or off (halo, glow, lines, orb, additive blending) and adjust its parameters while you watch the result on white, light gray and dark backgrounds. Your values are saved and applied to the real indicator. The defaults live in `FlowType/UI/WaveAppearance.swift`.
 
 ## Privacy
 
-- Audio is processed in memory and never saved.
-- Recognition and cleanup run locally, with no cloud APIs.
-- The network is used only to download models from Hugging Face.
+Audio is processed in memory and never saved. Recognition and cleanup run locally, with no cloud APIs. The network is used only to download models from Hugging Face.
 
 ## Acknowledgements
 
 FlowType is built on these open-source projects:
 
-- [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) by Argmax — MIT
-- [FluidAudio](https://github.com/FluidInference/FluidAudio) by FluidInference (Parakeet and Silero VAD on Core ML) — Apache 2.0
-- [MLX Swift](https://github.com/ml-explore/mlx-swift) and [MLX Swift LM](https://github.com/ml-explore/mlx-swift-lm) by Apple — MIT
-- [swift-transformers](https://github.com/huggingface/swift-transformers) and [swift-huggingface](https://github.com/huggingface/swift-huggingface) by Hugging Face — Apache 2.0
+- [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) by Argmax (MIT)
+- [FluidAudio](https://github.com/FluidInference/FluidAudio) by FluidInference, for Parakeet and Silero VAD on Core ML (Apache 2.0)
+- [MLX Swift](https://github.com/ml-explore/mlx-swift) and [MLX Swift LM](https://github.com/ml-explore/mlx-swift-lm) by Apple (MIT)
+- [swift-transformers](https://github.com/huggingface/swift-transformers) and [swift-huggingface](https://github.com/huggingface/swift-huggingface) by Hugging Face (Apache 2.0)
 
-Speech and language models are not bundled with the app. They are downloaded from Hugging Face on demand and are covered by their own licenses: OpenAI Whisper, NVIDIA Parakeet, Silero VAD, Qwen and Gemma.
+Speech and language models aren't bundled with the app. They're downloaded from Hugging Face on demand and are covered by their own licenses: OpenAI Whisper, NVIDIA Parakeet, Silero VAD, Qwen and Gemma.
 
 ## License
 
 The FlowType source code is released under the [MIT License](LICENSE).
 
-The FlowType name, the app icon, the menu bar icon and the images in `Docs/images` are not covered by the MIT License; all rights to them are reserved. If you publish a fork or a derived app, please give it a different name and icon.
+The FlowType name, the app icon, the menu bar icon and the images in `Docs/images` are not covered by the MIT License, and all rights to them are reserved. If you publish a fork or a derived app, please give it a different name and icon.
