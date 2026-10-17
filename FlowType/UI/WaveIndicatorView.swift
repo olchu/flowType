@@ -71,7 +71,6 @@ final class WaveLayerView: NSView {
     private let model: FloatingIndicatorModel
     private let engine = WaveEngine()
     private let strandsLayer = CALayer()
-    private let auraLayer = CAShapeLayer()
     private let fadeMask = CAGradientLayer()
     private let orbLayer = CAGradientLayer()
     private var haloLayers: [CAShapeLayer] = []
@@ -133,7 +132,6 @@ final class WaveLayerView: NSView {
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
 
-        auraLayer.shadowColor = palette.haze
         for (index, strand) in Self.strands.enumerated() {
             let color = strand.isPrimary ? palette.primary : palette.secondary
             haloLayers[index].shadowColor = color
@@ -167,7 +165,7 @@ final class WaveLayerView: NSView {
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         let scale = window?.backingScaleFactor ?? 2
-        for layer in [strandsLayer, auraLayer, fadeMask, orbLayer] + haloLayers + coreLayers {
+        for layer in [strandsLayer, fadeMask, orbLayer] + haloLayers + coreLayers {
             layer.contentsScale = scale
         }
     }
@@ -184,15 +182,6 @@ final class WaveLayerView: NSView {
         fadeMask.startPoint = CGPoint(x: 0, y: 0.5)
         fadeMask.endPoint = CGPoint(x: 1, y: 0.5)
         fadeMask.locations = Self.maskLocations.map { NSNumber(value: $0) }
-
-        // Coloured haze behind the glow. The additive glow vanishes on light
-        // backgrounds, so the haze carries the colour there; on dark ones it
-        // gives the bundle a plasma cloud. Black looked dirty on white.
-        auraLayer.frame = bounds
-        auraLayer.shadowOffset = .zero
-        auraLayer.shadowRadius = 18
-        auraLayer.shadowOpacity = 0.4
-        strandsLayer.addSublayer(auraLayer)
 
         // Glow comes from shadows with explicit paths: the window server
         // blurs them, so there is no hard edge and no in-process rendering.
@@ -267,12 +256,10 @@ final class WaveLayerView: NSView {
             let brightness = (0.45 + 0.55 * min(1, frame.level * 2.5) + frame.flash) * frame.visibility
             let waveRect = CGRect(x: center.x - width / 2, y: rect.minY, width: width, height: rect.height)
             fadeMask.frame = CGRect(x: waveRect.minX, y: 0, width: width, height: bounds.height)
-            let aura = CGMutablePath()
             let envelopes = envelopeProfile(steps: max(2, Int(width / 2)))
 
             for (index, strand) in Self.strands.enumerated() {
                 let shapes = Self.shapes(for: strand, in: waveRect, envelopes: envelopes, amplitude: amplitude, frame: frame)
-                aura.addPath(shapes.wideGlow)
                 let halo = haloLayers[index]
                 halo.shadowPath = shapes.wideGlow
                 halo.opacity = Float(min(1, 0.3 * strand.gain * brightness))
@@ -281,8 +268,6 @@ final class WaveLayerView: NSView {
                 core.shadowPath = shapes.nearGlow
                 core.opacity = Float(min(1, (0.35 + 0.45 * strand.gain) * brightness))
             }
-            auraLayer.shadowPath = aura
-            auraLayer.opacity = Float(frame.visibility)
 
             // Outside processing the mask is static; skip rebuilding it.
             let scanAmount = frame.scanAmount < 0.001 ? 0 : frame.scanAmount
@@ -493,37 +478,35 @@ final class WaveEngine {
 }
 
 /// Colours of one wave theme: strands alternate between `primary` and
-/// `secondary`; `haze` tints the cloud behind them.
+/// `secondary`.
 struct WavePalette {
     let primary: CGColor
     let secondary: CGColor
-    let haze: CGColor
 }
 
 extension WaveColor {
     var palette: WavePalette {
         switch self {
         case .blue:
-            Self.palette(primary: (0.38, 0.95, 0.96), secondary: (0.34, 0.6, 1.0), haze: (0.3, 0.68, 1.0))
+            Self.palette(primary: (0.38, 0.95, 0.96), secondary: (0.34, 0.6, 1.0))
         case .red:
-            Self.palette(primary: (1.0, 0.45, 0.4), secondary: (1.0, 0.22, 0.42), haze: (1.0, 0.35, 0.35))
+            Self.palette(primary: (1.0, 0.45, 0.4), secondary: (1.0, 0.22, 0.42))
         case .yellow:
-            Self.palette(primary: (1.0, 0.88, 0.4), secondary: (1.0, 0.62, 0.22), haze: (1.0, 0.75, 0.3))
+            Self.palette(primary: (1.0, 0.88, 0.4), secondary: (1.0, 0.62, 0.22))
         case .green:
-            Self.palette(primary: (0.5, 1.0, 0.62), secondary: (0.22, 0.88, 0.72), haze: (0.35, 0.95, 0.6))
+            Self.palette(primary: (0.5, 1.0, 0.62), secondary: (0.22, 0.88, 0.72))
         case .violet:
-            Self.palette(primary: (0.82, 0.6, 1.0), secondary: (0.56, 0.42, 1.0), haze: (0.7, 0.5, 1.0))
+            Self.palette(primary: (0.82, 0.6, 1.0), secondary: (0.56, 0.42, 1.0))
         }
     }
 
     private static func palette(
         primary: (Double, Double, Double),
-        secondary: (Double, Double, Double),
-        haze: (Double, Double, Double)
+        secondary: (Double, Double, Double)
     ) -> WavePalette {
         func color(_ rgb: (Double, Double, Double)) -> CGColor {
             CGColor(red: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
         }
-        return WavePalette(primary: color(primary), secondary: color(secondary), haze: color(haze))
+        return WavePalette(primary: color(primary), secondary: color(secondary))
     }
 }
