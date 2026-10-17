@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Combine
 import Foundation
 import os
@@ -55,6 +56,7 @@ final class AppState: ObservableObject {
     private let resourceMonitorService = ProcessResourceMonitorService()
     private let loginItemService = LoginItemService()
     private let floatingIndicatorController = FloatingIndicatorController()
+    private let feedbackSoundPlayer = FeedbackSoundPlayer()
     private let finalTailSilenceMargin: TimeInterval = 0.5
     private lazy var onboardingWindowController = OnboardingWindowController(appState: self)
     private var dictationTargetApplication: NSRunningApplication?
@@ -155,7 +157,7 @@ final class AppState: ObservableObject {
 
         dictationTargetApplication = NSWorkspace.shared.frontmostApplication
         status = .recording
-        playFeedbackSound(.recordingStarted)
+        feedbackSoundPlayer.play(.recordingStarted)
 
         streamingTranscriptionTask?.cancel()
         streamingTranscriptionTask = Task { [weak self] in
@@ -178,7 +180,7 @@ final class AppState: ObservableObject {
         audioLevel = 0
         smoothedAudioLevel = 0
         status = .transcribing
-        playFeedbackSound(.recordingStopped)
+        feedbackSoundPlayer.play(.recordingStopped)
 
         Task {
             let timing = DictationTiming()
@@ -225,7 +227,7 @@ final class AppState: ObservableObject {
                         into: dictationTargetApplication
                     )
                     timing.mark("paste completed")
-                    playFeedbackSound(.pasted)
+                    feedbackSoundPlayer.play(.pasted)
                 } catch {
                     showError(error)
                     timing.finish("paste failed")
@@ -610,16 +612,6 @@ final class AppState: ObservableObject {
         let threshold = 0.09 - min(max(sensitivity, 0), 1) * 0.08
         return max(0, (level - threshold) / max(0.01, 1 - threshold))
     }
-
-    private func playFeedbackSound(_ feedback: FeedbackSound) {
-        guard let sound = NSSound(named: feedback.soundName) else {
-            NSSound.beep()
-            return
-        }
-
-        sound.volume = feedback.volume
-        sound.play()
-    }
 }
 
 private enum FeedbackSound {
@@ -627,14 +619,15 @@ private enum FeedbackSound {
     case recordingStopped
     case pasted
 
-    var soundName: NSSound.Name {
+    /// WAV files in FlowType/Sounds, bundled as resources.
+    var fileName: String {
         switch self {
         case .recordingStarted:
-            .init("Tink")
+            "record_start"
         case .recordingStopped:
-            .init("Pop")
+            "record_stop"
         case .pasted:
-            .init("Ping")
+            "pasted"
         }
     }
 
@@ -645,6 +638,40 @@ private enum FeedbackSound {
         case .pasted:
             0.45
         }
+    }
+}
+
+/// Preloaded players, so cues start without a delay. A new cue fades out
+/// whatever is still ringing: with fast transcription the stop and paste
+/// sounds would otherwise overlap.
+@MainActor
+private final class FeedbackSoundPlayer {
+    private static let handoffFade: TimeInterval = 0.12
+
+    private var players: [FeedbackSound: AVAudioPlayer] = [:]
+
+    init() {
+        for sound in [FeedbackSound.recordingStarted, .recordingStopped, .pasted] {
+            guard let url = Bundle.main.url(forResource: sound.fileName, withExtension: "wav"),
+                  let player = try? AVAudioPlayer(contentsOf: url) else { continue }
+            player.prepareToPlay()
+            players[sound] = player
+        }
+    }
+
+    func play(_ sound: FeedbackSound) {
+        for (other, player) in players where other != sound && player.isPlaying {
+            player.setVolume(0, fadeDuration: Self.handoffFade)
+        }
+
+        guard let player = players[sound] else {
+            NSSound.beep()
+            return
+        }
+        player.stop()
+        player.currentTime = 0
+        player.volume = sound.volume
+        player.play()
     }
 }
 
