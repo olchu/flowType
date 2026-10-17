@@ -101,7 +101,9 @@ final class AudioRecorderService {
         let noiseFloor: Float = 0.018
         let usableRange: Float = 0.16
         let gated = max(0, rms - noiseFloor)
-        return Double(min(1, gated / usableRange))
+        // Loudness is perceived roughly logarithmically; the curve lifts quiet
+        // speech while silence below the noise floor stays at zero.
+        return pow(Double(min(1, gated / usableRange)), 0.6)
     }
 
 }
