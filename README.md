@@ -26,6 +26,8 @@ Recognition runs on your Mac, with Whisper or NVIDIA Parakeet. Your audio stays 
 
 If you press `Fn` and say nothing, nothing is pasted: the speech detector drops empty recordings.
 
+To cancel, press `Esc` while recording or while the text is being processed. Nothing is pasted, and the `Esc` doesn't reach the app you're typing in.
+
 ## Features
 
 ### Speech recognition

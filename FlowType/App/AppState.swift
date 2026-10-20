@@ -9,6 +9,7 @@ final class AppState: ObservableObject {
     @Published var status: AppStatus = .ready {
         didSet {
             updateFloatingIndicator()
+            hotkeyService.interceptsEscape = status == .recording || status == .transcribing
         }
     }
     @Published var settings = AppSettings() {
@@ -62,6 +63,10 @@ final class AppState: ObservableObject {
     private var dictationTargetApplication: NSRunningApplication?
     private var resourceUsageTask: Task<Void, Never>?
     private var streamingTranscriptionTask: Task<Void, Never>?
+    /// Processing of the last dictation, or the stream shutdown of a cancelled
+    /// one. The next dictation's stream waits for it: the stream and the final
+    /// decode share one WhisperKit pipeline.
+    private var dictationTask: Task<Void, Never>?
     /// The start cue plays through the speakers and reaches the microphone;
     /// until its loud part ends the indicator would show it as speech.
     private static let startCueMaskDuration: Duration = .milliseconds(450)
@@ -171,18 +176,47 @@ final class AppState: ObservableObject {
         startCueMaskEnd = settings.playsSounds ? .now + Self.startCueMaskDuration : nil
 
         streamingTranscriptionTask?.cancel()
+        let previousDictation = dictationTask
         streamingTranscriptionTask = Task { [weak self] in
-            guard let self else { return }
+            await previousDictation?.value
+            guard let self, !Task.isCancelled else { return }
             do {
                 try await transcriptionService.startStreamingTranscription(
                     language: settings.language,
                     model: settings.profile.model
                 )
             } catch {
+                guard !Task.isCancelled else { return }
                 _ = audioRecorder.stopRecording()
                 showError(error)
             }
         }
+    }
+
+    /// Escape during a dictation drops the recording, or its processing if
+    /// Fn was already released, and nothing is pasted.
+    func cancelDictation() {
+        switch status {
+        case .recording:
+            _ = audioRecorder.stopRecording()
+            let streamingTask = streamingTranscriptionTask
+            streamingTask?.cancel()
+            streamingTranscriptionTask = nil
+            dictationTask = Task { [weak self] in
+                await streamingTask?.value
+                _ = await self?.transcriptionService.stopStreamingTranscription()
+            }
+            playFeedback(.recordingStopped)
+        case .transcribing:
+            // WhisperKit and MLX stop at their next cancellation check; the
+            // task itself returns before pasting.
+            dictationTask?.cancel()
+        case .ready, .error:
+            return
+        }
+
+        audioLevel = 0
+        status = .ready
     }
 
     func finishDictation() {
@@ -192,7 +226,7 @@ final class AppState: ObservableObject {
         status = .transcribing
         playFeedback(.recordingStopped)
 
-        Task {
+        dictationTask = Task {
             let timing = DictationTiming()
             timing.mark("finish requested")
             let recordedAudio = audioRecorder.stopRecording()
@@ -215,6 +249,10 @@ final class AppState: ObservableObject {
                 timing: timing
             )
             timing.mark("final transcript ready chars=\(rawTranscript.count)")
+            guard !Task.isCancelled else {
+                timing.finish("cancelled")
+                return
+            }
 
             let cleanupResult = await transcriptCleanupService.clean(
                 rawTranscript,
@@ -225,6 +263,13 @@ final class AppState: ObservableObject {
             timing.mark(
                 "cleanup completed mode=\(settings.cleanupMode.rawValue) model=\(settings.cleanupModel.rawValue) decision=\(cleanupResult.decision) rawChars=\(rawTranscript.count) chars=\(transcript.count)"
             )
+
+            guard !Task.isCancelled else {
+                timing.finish("cancelled")
+                return
+            }
+            // Too late to cancel once the text is on its way into the app.
+            hotkeyService.interceptsEscape = false
 
             guard !transcript.isEmpty else {
                 status = .ready
@@ -600,6 +645,10 @@ final class AppState: ObservableObject {
 
         hotkeyService.onKeyUp = { [weak self] in
             self?.finishDictation()
+        }
+
+        hotkeyService.onEscape = { [weak self] in
+            self?.cancelDictation()
         }
 
         do {

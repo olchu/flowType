@@ -103,6 +103,9 @@ final class TranscriptionService {
         guard model.supportsStreaming else { return }
 
         let pipeline = try await pipeline(for: model, shouldPrewarm: false)
+        // Cancelled dictations must not open a stream after they were stopped;
+        // nothing would stop it until the next dictation.
+        guard !Task.isCancelled else { return }
         guard let tokenizer = pipeline.tokenizer else {
             throw WhisperError.tokenizerUnavailable()
         }
