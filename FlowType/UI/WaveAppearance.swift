@@ -7,23 +7,23 @@ import Foundation
 struct WaveAppearance: Codable, Equatable {
     /// Wide, soft glow around each strand (the "halo").
     var showsHalo = true
-    var haloOpacity = 0.16
-    var haloRadius = 8.0
+    var haloOpacity = 0.32
+    var haloRadius = 15.92
     /// How far the halo outline extends beyond the strand before blurring.
-    var haloSpread = 4.5
+    var haloSpread = 5.57
     /// 0 keeps the theme colour, 1 is pure white.
-    var haloWhiteness = 0.0
+    var haloWhiteness = 0.76
 
     /// Tight glow hugging each strand.
     var showsGlow = true
-    var glowOpacity = 0.5
-    var glowRadius = 2.0
-    var glowWhiteness = 0.55
+    var glowOpacity = 0.52
+    var glowRadius = 6.61
+    var glowWhiteness = 0.86
 
     /// The strands themselves.
     var showsLines = true
     var lineOpacity = 1.0
-    var lineWidth = 0.8
+    var lineWidth = 0.97
     var lineWhiteness = 0.0
 
     /// Adds overlapping strands and glows together ("plus lighter"), so
