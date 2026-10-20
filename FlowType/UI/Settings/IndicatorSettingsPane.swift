@@ -27,7 +27,7 @@ struct IndicatorSettingsPane: View {
                 }
                 .pickerStyle(.segmented)
 
-                if appState.settings.indicatorStyle == .waves {
+                if appState.settings.indicatorStyle.usesWaveColor {
                     LabeledContent("Color") {
                         HStack(spacing: 4) {
                             ForEach(WaveColor.allCases) { color in
@@ -36,7 +36,8 @@ struct IndicatorSettingsPane: View {
                         }
                     }
 
-                    if showsTuner {
+                    // The tuner only edits the waves.
+                    if showsTuner && appState.settings.indicatorStyle == .waves {
                         LabeledContent("Glow and layers") {
                             Button("Fine-tune…") {
                                 openWindow(id: "wave-tuner")

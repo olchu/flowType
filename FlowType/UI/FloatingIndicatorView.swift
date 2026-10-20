@@ -64,11 +64,14 @@ struct FloatingIndicatorView: View {
         let size = model.style.indicatorSize
 
         ZStack {
-            // Waves float on a transparent background and run their own
-            // intro and dismissal; errors still use the pill.
-            if model.style == .waves && model.content != .status(.error) {
+            // Waves and dots float on a transparent background and run their
+            // own intro and dismissal; errors still use the pill.
+            switch model.content == .status(.error) ? .bars : model.style {
+            case .waves:
                 WaveIndicatorView(model: model)
-            } else {
+            case .dots:
+                DotsIndicatorView(model: model)
+            case .bars:
                 Capsule()
                     .fill(.black)
                     .frame(width: isExpanded ? 72 : 8, height: isExpanded ? 20 : 8)
@@ -272,6 +275,16 @@ private struct PastedStatusView: View {
 }
 
 extension IndicatorStyle {
+    /// Whether the style is drawn in one of the WaveColor themes.
+    var usesWaveColor: Bool {
+        switch self {
+        case .bars:
+            false
+        case .waves, .dots:
+            true
+        }
+    }
+
     /// FloatingIndicatorView's fixed frame for this style.
     var indicatorSize: CGSize {
         switch self {
@@ -279,41 +292,44 @@ extension IndicatorStyle {
             CGSize(width: 72, height: 22)
         case .waves:
             WaveIndicatorView.size
+        case .dots:
+            DotsIndicatorView.size
         }
     }
 
-    /// Gap between the Dock and the bottom of the frame. The waves frame has
-    /// a transparent glow margin, so it can dip slightly behind the Dock and
-    /// still keep the lines above it.
+    /// Gap between the Dock and the bottom of the frame. The waves and dots
+    /// frames have a transparent glow margin, so they can dip slightly behind
+    /// the Dock and still keep the drawing above it.
     var bottomInset: CGFloat {
         switch self {
         case .bars:
             20
-        case .waves:
+        case .waves, .dots:
             -10
         }
     }
 
     /// How long the dismissal animation runs before the panel is hidden.
-    /// Waves collapse into the orb and fade, which takes longer than the pill.
+    /// Waves collapse into the orb and dots fold into the middle, which takes
+    /// longer than the pill.
     var dismissalDuration: TimeInterval {
         switch self {
         case .bars:
             0.19
-        case .waves:
+        case .waves, .dots:
             0.32
         }
     }
 
     /// How long the pasted confirmation stays before the dismissal starts.
     /// The pill needs time to pop open and bounce the checkmark; the waves
-    /// flash fades within 0.2 s, so they collapse almost at once and the
-    /// flash plays out during the collapse.
+    /// and dots flash fades within 0.2 s, so they collapse almost at once and
+    /// the flash plays out during the collapse.
     var pastedHoldDuration: Duration {
         switch self {
         case .bars:
             .milliseconds(650)
-        case .waves:
+        case .waves, .dots:
             .milliseconds(100)
         }
     }
@@ -323,6 +339,7 @@ extension IndicatorStyle {
     VStack(spacing: 20) {
         FloatingIndicatorView(model: FloatingIndicatorModel(content: .status(.recording), audioLevel: 0.8))
         FloatingIndicatorView(model: FloatingIndicatorModel(content: .status(.recording), audioLevel: 0.8, style: .waves))
+        FloatingIndicatorView(model: FloatingIndicatorModel(content: .status(.recording), audioLevel: 0.8, style: .dots))
         FloatingIndicatorView(model: FloatingIndicatorModel(content: .status(.transcribing)))
         FloatingIndicatorView(model: FloatingIndicatorModel(content: .loading))
         FloatingIndicatorView(model: FloatingIndicatorModel(content: .pasted))

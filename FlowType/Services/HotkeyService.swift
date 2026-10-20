@@ -1,4 +1,5 @@
 import ApplicationServices
+import Carbon.HIToolbox
 import Foundation
 
 @MainActor
@@ -14,64 +15,73 @@ final class HotkeyService {
         }
     }
 
+    private struct EventTap {
+        let port: CFMachPort
+        let source: CFRunLoopSource
+
+        func setEnabled(_ isEnabled: Bool) {
+            CGEvent.tapEnable(tap: port, enable: isEnabled)
+        }
+
+        func remove() {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            CGEvent.tapEnable(tap: port, enable: false)
+            CFMachPortInvalidate(port)
+        }
+    }
+
     var onKeyDown: (() -> Void)?
     var onKeyUp: (() -> Void)?
     var onEscape: (() -> Void)?
 
     /// While true, Escape is taken away from the frontmost app and reported
     /// through `onEscape`. Meant for the length of a dictation only: taking
-    /// keys away needs an active tap, and an active tap holds every key press
-    /// in the system until this app's main thread has looked at it.
+    /// keys away needs an active tap, and while it is enabled it holds every
+    /// key press in the system until this app's main thread has looked at it.
     var interceptsEscape = false {
         didSet {
             updateEscapeTap()
         }
     }
 
-    private static let escapeKeyCode: Int64 = 53
+    private static let escapeKeyCode = Int64(kVK_Escape)
 
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
-    private var escapeTap: CFMachPort?
-    private var escapeRunLoopSource: CFRunLoopSource?
+    private var fnTap: EventTap?
+    /// Created on the first dictation and enabled only while Escape is
+    /// intercepted.
+    private var escapeTap: EventTap?
     private var isPressed = false
     /// From a swallowed Escape press until its release, so the auto-repeats
     /// and the release don't reach the app either.
     private var isSwallowingEscape = false
 
     func start() throws {
-        guard eventTap == nil else { return }
+        guard fnTap == nil else { return }
 
-        let callback: CGEventTapCallBack = { _, type, event, userInfo in
-            guard let userInfo else { return Unmanaged.passUnretained(event) }
-
-            let service = Unmanaged<HotkeyService>.fromOpaque(userInfo).takeUnretainedValue()
-            Task { @MainActor in
-                service.handleEvent(type: type, event: event)
-            }
-
-            return Unmanaged.passUnretained(event)
-        }
-
-        guard let (eventTap, runLoopSource) = makeTap(
+        guard let fnTap = makeTap(
             events: 1 << CGEventType.flagsChanged.rawValue,
             options: .listenOnly,
-            callback: callback
+            callback: { _, type, event, userInfo in
+                if let service = HotkeyService.service(from: userInfo) {
+                    Task { @MainActor in
+                        service.handleEvent(type: type, event: event)
+                    }
+                }
+                return Unmanaged.passUnretained(event)
+            }
         ) else {
             throw HotkeyError.eventTapCreationFailed
         }
-
-        self.eventTap = eventTap
-        self.runLoopSource = runLoopSource
+        fnTap.setEnabled(true)
+        self.fnTap = fnTap
+        updateEscapeTap()
     }
 
     func stop() {
-        removeTap(eventTap, runLoopSource)
-        removeTap(escapeTap, escapeRunLoopSource)
+        fnTap?.remove()
+        escapeTap?.remove()
 
-        runLoopSource = nil
-        eventTap = nil
-        escapeRunLoopSource = nil
+        fnTap = nil
         escapeTap = nil
         isPressed = false
         isSwallowingEscape = false
@@ -88,8 +98,7 @@ final class HotkeyService {
             // The system switches the tap off when the main thread stalls past
             // the tap timeout. It stays off until re-enabled, which would
             // leave Fn dead until the app restarts.
-            guard let eventTap else { return }
-            CGEvent.tapEnable(tap: eventTap, enable: true)
+            fnTap?.setEnabled(true)
             // A Fn release that happened while the tap was off was never
             // delivered; without this the recording would never stop.
             let flags = CGEventSource.flagsState(.combinedSessionState)
@@ -113,52 +122,46 @@ final class HotkeyService {
     }
 
     private func updateEscapeTap() {
-        if interceptsEscape {
-            startEscapeTap()
-        } else if !isSwallowingEscape {
-            // A held Escape keeps the tap until its release is swallowed too.
-            removeTap(escapeTap, escapeRunLoopSource)
-            escapeTap = nil
-            escapeRunLoopSource = nil
+        // A release lost while the tap was off would otherwise keep the tap
+        // on, holding every key press, until Escape is pressed again.
+        if isSwallowingEscape && !CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(kVK_Escape)) {
+            isSwallowingEscape = false
         }
+
+        let isNeeded = interceptsEscape || isSwallowingEscape
+        // Retried on each dictation: without this tap Escape just isn't
+        // intercepted, dictation still works.
+        if isNeeded && escapeTap == nil && fnTap != nil {
+            escapeTap = makeEscapeTap()
+        }
+
+        // A held Escape stays intercepted until its release is swallowed too.
+        escapeTap?.setEnabled(isNeeded)
     }
 
-    private func startEscapeTap() {
-        guard escapeTap == nil else { return }
-
-        let callback: CGEventTapCallBack = { _, type, event, userInfo in
-            guard let userInfo else { return Unmanaged.passUnretained(event) }
-
-            let service = Unmanaged<HotkeyService>.fromOpaque(userInfo).takeUnretainedValue()
-            // The tap is on the main run loop, and whether the key is dropped
-            // has to be decided before the callback returns.
-            let swallows = MainActor.assumeIsolated {
-                service.handleEscapeTapEvent(type: type, event: event)
-            }
-
-            return swallows ? nil : Unmanaged.passUnretained(event)
-        }
-
-        // Without this tap Escape just isn't intercepted; dictation still works.
-        guard let (escapeTap, escapeRunLoopSource) = makeTap(
+    private func makeEscapeTap() -> EventTap? {
+        makeTap(
             events: 1 << CGEventType.keyDown.rawValue | 1 << CGEventType.keyUp.rawValue,
             options: .defaultTap,
-            callback: callback
-        ) else {
-            return
-        }
-
-        self.escapeTap = escapeTap
-        self.escapeRunLoopSource = escapeRunLoopSource
+            callback: { _, type, event, userInfo in
+                guard let service = HotkeyService.service(from: userInfo) else {
+                    return Unmanaged.passUnretained(event)
+                }
+                // The tap is on the main run loop, and whether the key is
+                // dropped has to be decided before the callback returns.
+                let swallows = MainActor.assumeIsolated {
+                    service.handleEscapeTapEvent(type: type, event: event)
+                }
+                return swallows ? nil : Unmanaged.passUnretained(event)
+            }
+        )
     }
 
     /// Returns whether the event is swallowed.
     private func handleEscapeTapEvent(type: CGEventType, event: CGEvent) -> Bool {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            if let escapeTap {
-                CGEvent.tapEnable(tap: escapeTap, enable: true)
-            }
+            updateEscapeTap()
             return false
 
         case .keyDown:
@@ -175,9 +178,7 @@ final class HotkeyService {
 
             guard interceptsEscape else {
                 isSwallowingEscape = false
-                Task {
-                    self.updateEscapeTap()
-                }
+                updateEscapeTap()
                 return false
             }
 
@@ -198,12 +199,7 @@ final class HotkeyService {
             }
 
             isSwallowingEscape = false
-            if !interceptsEscape {
-                // Removed outside the tap's own callback.
-                Task {
-                    self.updateEscapeTap()
-                }
-            }
+            updateEscapeTap()
             return true
 
         default:
@@ -211,12 +207,17 @@ final class HotkeyService {
         }
     }
 
+    nonisolated private static func service(from userInfo: UnsafeMutableRawPointer?) -> HotkeyService? {
+        userInfo.map { Unmanaged<HotkeyService>.fromOpaque($0).takeUnretainedValue() }
+    }
+
+    /// The tap is created disabled; callers enable it when it should run.
     private func makeTap(
         events: CGEventMask,
         options: CGEventTapOptions,
         callback: CGEventTapCallBack
-    ) -> (CFMachPort, CFRunLoopSource)? {
-        guard let tap = CGEvent.tapCreate(
+    ) -> EventTap? {
+        guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: options,
@@ -227,23 +228,12 @@ final class HotkeyService {
             return nil
         }
 
-        guard let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
-            CFMachPortInvalidate(tap)
+        guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0) else {
+            CFMachPortInvalidate(port)
             return nil
         }
-        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-        return (tap, runLoopSource)
-    }
-
-    private func removeTap(_ tap: CFMachPort?, _ runLoopSource: CFRunLoopSource?) {
-        if let runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        }
-
-        if let tap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            CFMachPortInvalidate(tap)
-        }
+        CGEvent.tapEnable(tap: port, enable: false)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        return EventTap(port: port, source: source)
     }
 }

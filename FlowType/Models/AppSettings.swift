@@ -63,6 +63,7 @@ enum CleanupLLMModel: String, Codable, CaseIterable, Identifiable {
 enum IndicatorStyle: String, Codable, CaseIterable, Identifiable {
     case bars = "Bars"
     case waves = "Waves"
+    case dots = "Dots"
 
     var id: Self { self }
 }

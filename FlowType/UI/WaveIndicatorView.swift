@@ -20,27 +20,20 @@ struct WaveIndicatorView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: WaveLayerView, context: Context) {
-        view.update(mode: mode, presentationID: model.presentationID, isDismissing: model.isDismissing)
+        view.update(
+            mode: WaveEngine.Mode(model.content),
+            presentationID: model.presentationID,
+            isDismissing: model.isDismissing
+        )
         view.apply(model.waveColor)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: WaveLayerView, context: Context) -> CGSize? {
         Self.size
     }
-
-    private var mode: WaveEngine.Mode {
-        switch model.content {
-        case .status(.recording):
-            .listening
-        case .pasted:
-            .pasted
-        case .loading, .status:
-            .processing
-        }
-    }
 }
 
-final class WaveLayerView: NSView {
+final class WaveLayerView: IndicatorLayerView {
     private struct Strand {
         let cycles: Double
         let speed: Double
@@ -67,61 +60,19 @@ final class WaveLayerView: NSView {
         Strand(cycles: 2.9, speed: 1.5, phase: 5.6, swellSpeed: -0.6, gain: 0.25, isPrimary: true),
     ]
 
-    /// Read every frame for the audio level, which is not published.
-    private let model: FloatingIndicatorModel
-    private let engine = WaveEngine()
     private let strandsLayer = CALayer()
     private let fadeMask = CAGradientLayer()
     private let orbLayer = CAGradientLayer()
     private var haloLayers: [CAShapeLayer] = []
     private var coreLayers: [CAShapeLayer] = []
-    private var displayLink: CADisplayLink?
-    private var stopTime: CFTimeInterval?
     private var waveColor: WaveColor?
     private var appliedAppearance: WaveAppearance?
     private var envelopeCache: [Double] = []
     private var maskScanAmount: Double?
 
-    private var mode: WaveEngine.Mode = .processing
-    private var presentationID: Int?
-    private var isDismissing = false
-
     init(frame frameRect: NSRect, model: FloatingIndicatorModel) {
-        self.model = model
-        super.init(frame: frameRect)
-        wantsLayer = true
+        super.init(frame: frameRect, model: model, style: .waves)
         setUpLayers()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func update(mode: WaveEngine.Mode, presentationID: Int, isDismissing: Bool) {
-        self.mode = mode
-        let now = CACurrentMediaTime()
-
-        if presentationID != self.presentationID {
-            self.presentationID = presentationID
-            self.isDismissing = false
-            engine.present(at: now)
-            stopTime = nil
-            startDisplayLink()
-        }
-
-        guard isDismissing != self.isDismissing else { return }
-        self.isDismissing = isDismissing
-        if isDismissing {
-            engine.dismiss(at: now)
-            // Stop redrawing once the orb has faded and the panel is hidden.
-            stopTime = now + IndicatorStyle.waves.dismissalDuration + 0.2
-        } else {
-            // Dismissal was taken back: grow back from the current state.
-            engine.resume()
-            stopTime = nil
-            startDisplayLink()
-        }
     }
 
     func apply(_ waveColor: WaveColor) {
@@ -166,21 +117,6 @@ final class WaveLayerView: NSView {
             palette.primary.copy(alpha: 0.3)!,
             palette.primary.copy(alpha: 0)!,
         ]
-    }
-
-    override func viewWillMove(toWindow newWindow: NSWindow?) {
-        super.viewWillMove(toWindow: newWindow)
-        // The display link retains its target.
-        if newWindow == nil {
-            stopDisplayLink()
-        }
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window != nil && presentationID != nil && stopTime == nil {
-            startDisplayLink()
-        }
     }
 
     override func viewDidChangeBackingProperties() {
@@ -230,32 +166,10 @@ final class WaveLayerView: NSView {
         layer.addSublayer(orbLayer)
 
         apply(.blue)
-        render(WaveEngine.Frame(level: 0, clock: 0, spread: 0, visibility: 0, flash: 0, scan: 0, scanAmount: 0))
+        render(.hidden)
     }
 
-    private func startDisplayLink() {
-        guard displayLink == nil, window != nil else { return }
-        let link = displayLink(target: self, selector: #selector(step(_:)))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
-        link.add(to: .main, forMode: .common)
-        displayLink = link
-    }
-
-    private func stopDisplayLink() {
-        displayLink?.invalidate()
-        displayLink = nil
-    }
-
-    @objc private func step(_ link: CADisplayLink) {
-        let now = CACurrentMediaTime()
-        if let stopTime, now >= stopTime {
-            stopDisplayLink()
-            return
-        }
-        render(engine.advance(mode: mode, audioLevel: model.audioLevel, at: now))
-    }
-
-    private func render(_ frame: WaveEngine.Frame) {
+    override func render(_ frame: WaveEngine.Frame) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -412,9 +326,22 @@ final class WaveEngine {
         case listening
         case processing
         case pasted
+
+        init(_ content: FloatingIndicatorModel.Content) {
+            switch content {
+            case .status(.recording):
+                self = .listening
+            case .pasted:
+                self = .pasted
+            case .loading, .status:
+                self = .processing
+            }
+        }
     }
 
     struct Frame {
+        static let hidden = Frame(level: 0, clock: 0, spread: 0, visibility: 0, flash: 0, scan: 0, scanAmount: 0, elapsed: 0)
+
         var level: Double
         var clock: Double
         /// 0 is the collapsed orb, 1 is full-width waves.
@@ -425,6 +352,8 @@ final class WaveEngine {
         var scan: Double
         /// How much the processing pulse shows, eased in and out.
         var scanAmount: Double
+        /// Seconds since the previous frame, capped so a stall doesn't jump.
+        var elapsed: Double
     }
 
     private var level = 0.0
@@ -498,11 +427,14 @@ final class WaveEngine {
             visibility: visibility,
             flash: pastedAt.map { exp(-(time - $0) * 5) } ?? 0,
             scan: sin(time * 4.8),
-            scanAmount: scanAmount
+            scanAmount: scanAmount,
+            elapsed: elapsed
         )
     }
 
-    private static func ease(_ value: Double, toward target: Double, rate: Double, elapsed: Double) -> Double {
+    /// Moves `value` towards `target` by an exponential step, so easing
+    /// looks the same at any frame rate.
+    static func ease(_ value: Double, toward target: Double, rate: Double, elapsed: Double) -> Double {
         value + (target - value) * (1 - exp(-rate * elapsed))
     }
 }

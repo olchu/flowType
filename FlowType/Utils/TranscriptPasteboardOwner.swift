@@ -15,7 +15,7 @@ final class TranscriptPasteboardOwner: NSObject {
     ]
 
     private let text: String
-    private(set) var textReadTimes: [ContinuousClock.Instant] = []
+    private(set) var lastTextReadAt: ContinuousClock.Instant?
     private(set) var hasLostOwnership = false
 
     init(text: String) {
@@ -32,7 +32,7 @@ extension TranscriptPasteboardOwner: NSPasteboardTypeOwner {
             return
         }
 
-        textReadTimes.append(.now)
+        lastTextReadAt = .now
         sender.setString(text, forType: .string)
     }
 

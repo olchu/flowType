@@ -9,7 +9,7 @@ final class AppState: ObservableObject {
     @Published var status: AppStatus = .ready {
         didSet {
             updateFloatingIndicator()
-            hotkeyService.interceptsEscape = status == .recording || status == .transcribing
+            updateEscapeInterception()
         }
     }
     @Published var settings = AppSettings() {
@@ -67,6 +67,13 @@ final class AppState: ObservableObject {
     /// one. The next dictation's stream waits for it: the stream and the final
     /// decode share one WhisperKit pipeline.
     private var dictationTask: Task<Void, Never>?
+    /// Set once the text is on its way into the app; from then on Escape
+    /// can't cancel the dictation.
+    private var isDeliveringTranscript = false {
+        didSet {
+            updateEscapeInterception()
+        }
+    }
     /// The start cue plays through the speakers and reaches the microphone;
     /// until its loud part ends the indicator would show it as speech.
     private static let startCueMaskDuration: Duration = .milliseconds(450)
@@ -171,6 +178,7 @@ final class AppState: ObservableObject {
         }
 
         dictationTargetApplication = NSWorkspace.shared.frontmostApplication
+        isDeliveringTranscript = false
         status = .recording
         playFeedback(.recordingStarted)
         startCueMaskEnd = settings.playsSounds ? .now + Self.startCueMaskDuration : nil
@@ -208,8 +216,10 @@ final class AppState: ObservableObject {
             }
             playFeedback(.recordingStopped)
         case .transcribing:
-            // WhisperKit and MLX stop at their next cancellation check; the
-            // task itself returns before pasting.
+            // Too late: the text is already on its way into the app.
+            guard !isDeliveringTranscript else { return }
+            // WhisperKit stops at its next cancellation check; the task
+            // itself returns before the cleanup and before pasting.
             dictationTask?.cancel()
         case .ready, .error:
             return
@@ -226,9 +236,22 @@ final class AppState: ObservableObject {
         status = .transcribing
         playFeedback(.recordingStopped)
 
+        // Taken now: after the awaits below the slot may already hold the
+        // next dictation's stream.
+        let streamingTask = streamingTranscriptionTask
+        streamingTranscriptionTask = nil
+
         dictationTask = Task {
             let timing = DictationTiming()
             timing.mark("finish requested")
+            // Checked between stages: a cancelled decode returns its fallback
+            // text instead of throwing, and the cleanup doesn't check at all.
+            func isCancelled() -> Bool {
+                guard Task.isCancelled else { return false }
+                timing.finish("cancelled")
+                return true
+            }
+
             let recordedAudio = audioRecorder.stopRecording()
             timing.mark("audio stopped duration=\(formattedSeconds(recordedAudio.duration))s samples=\(recordedAudio.samples.count)")
 
@@ -239,8 +262,7 @@ final class AppState: ObservableObject {
                 "stream stopped textChars=\(streamingResult.transcript.count) confirmedChars=\(streamingResult.confirmedTranscript.count) confirmedEnd=\(formattedSeconds(streamingResult.confirmedEndSeconds))s streamAudio=\(formattedSeconds(streamingResult.audio.duration))s"
             )
 
-            streamingTranscriptionTask?.cancel()
-            streamingTranscriptionTask = nil
+            streamingTask?.cancel()
 
             let rawTranscript = await finalTranscript(
                 from: recordedAudio,
@@ -249,10 +271,7 @@ final class AppState: ObservableObject {
                 timing: timing
             )
             timing.mark("final transcript ready chars=\(rawTranscript.count)")
-            guard !Task.isCancelled else {
-                timing.finish("cancelled")
-                return
-            }
+            if isCancelled() { return }
 
             let cleanupResult = await transcriptCleanupService.clean(
                 rawTranscript,
@@ -264,12 +283,8 @@ final class AppState: ObservableObject {
                 "cleanup completed mode=\(settings.cleanupMode.rawValue) model=\(settings.cleanupModel.rawValue) decision=\(cleanupResult.decision) rawChars=\(rawTranscript.count) chars=\(transcript.count)"
             )
 
-            guard !Task.isCancelled else {
-                timing.finish("cancelled")
-                return
-            }
-            // Too late to cancel once the text is on its way into the app.
-            hotkeyService.interceptsEscape = false
+            if isCancelled() { return }
+            isDeliveringTranscript = true
 
             guard !transcript.isEmpty else {
                 status = .ready
@@ -676,6 +691,11 @@ final class AppState: ObservableObject {
                 self?.refreshResourceUsage()
             }
         }
+    }
+
+    private func updateEscapeInterception() {
+        hotkeyService.interceptsEscape = (status == .recording || status == .transcribing)
+            && !isDeliveringTranscript
     }
 
     private func updateFloatingIndicator() {

@@ -95,20 +95,30 @@ final class WaveAppearanceStore: ObservableObject {
 }
 
 extension CGColor {
+    private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+
     /// The colour moved towards white by `amount` (0...1).
     func mixedWithWhite(_ amount: Double) -> CGColor {
-        let amount = min(max(amount, 0), 1)
+        mixed(toward: [1, 1, 1], amount: amount)
+    }
+
+    /// The colour moved towards `other` by `amount` (0...1), keeping its alpha.
+    func mixed(with other: CGColor, amount: Double) -> CGColor {
+        guard let target = other.converted(to: Self.sRGB, intent: .defaultIntent, options: nil)?.components,
+              target.count >= 3 else {
+            return self
+        }
+        return mixed(toward: target, amount: amount)
+    }
+
+    private func mixed(toward target: [CGFloat], amount: Double) -> CGColor {
+        let amount = CGFloat(min(max(amount, 0), 1))
         guard amount > 0,
-              let rgb = converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil),
+              let rgb = converted(to: Self.sRGB, intent: .defaultIntent, options: nil),
               let components = rgb.components, components.count >= 3 else {
             return self
         }
-        let mix = { (value: CGFloat) in value + (1 - value) * CGFloat(amount) }
-        return CGColor(
-            srgbRed: mix(components[0]),
-            green: mix(components[1]),
-            blue: mix(components[2]),
-            alpha: rgb.alpha
-        )
+        let mix = { (index: Int) in components[index] + (target[index] - components[index]) * amount }
+        return CGColor(srgbRed: mix(0), green: mix(1), blue: mix(2), alpha: rgb.alpha)
     }
 }

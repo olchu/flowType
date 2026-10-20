@@ -80,9 +80,11 @@ Parallels Desktop gets its own handling, because it syncs the clipboard with the
 
 Waves is a set of glowing waves that open out of an orb and react to your voice. While the text is being processed, a pulse of light travels along them, and they flash when it's pasted. They come in five colours: blue, red, yellow, green and violet. The waves are drawn with Core Animation instead of SwiftUI's Metal renderer, which keeps their GPU memory use close to zero.
 
-Bars is a compact pill with level bars. It shows dots while transcribing and a checkmark after pasting.
+Bars is a compact pill with level bars. It shows a pulsing ellipsis while transcribing and a checkmark after pasting.
 
-Either style appears almost instantly and collapses right after the paste. Microphone sensitivity is adjustable, and at low values the indicator ignores background noise.
+Dots is a field of glowing dots in columns, mirrored around a centre row like a spectrum. The columns bounce with your voice and turn white towards the middle, a bump of light sweeps across them while the text is processed, and they flash and fold in when it's pasted. It uses the same five colours as Waves.
+
+Every style appears almost instantly and collapses right after the paste. Microphone sensitivity is adjustable, and at low values the indicator ignores background noise.
 
 ### Sounds
 
@@ -102,7 +104,7 @@ The menu shows the current status, model loading progress, and the CPU and memor
 - Permissions: microphone and Accessibility. Changes you make in System Settings are picked up automatically.
 - Models: profile choice, model download and deletion, loading progress of the active model.
 - Transcription: language, streaming mode and text cleanup.
-- Indicator: style, colour and sensitivity, with a live preview.
+- Indicator: style (Bars, Waves or Dots), colour and sensitivity, with a live preview.
 - Sounds: on/off, volume and cue previews.
 
 On first launch, an onboarding window offers to download the recommended model.

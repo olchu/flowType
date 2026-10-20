@@ -90,9 +90,7 @@ final class PasteService {
             }
 
             // Inserted without the clipboard; nothing is going to read it.
-            if pasteboard.changeCount == changeCount {
-                snapshot.restore(to: pasteboard)
-            }
+            restoreIfStillOwned(snapshot, owner: owner, changeCount: changeCount)
             return
         }
 
@@ -156,13 +154,15 @@ final class PasteService {
             let now = ContinuousClock.now
             // Reads before ⌘V come from apps reacting to the clipboard change
             // itself, not from the paste target.
-            let lastTargetRead = owner.textReadTimes.last { $0 >= pasteSentAt }
+            let targetFinishedReading = owner.lastTextReadAt.map {
+                $0 >= pasteSentAt && now - $0 >= Self.quietPeriodAfterRead
+            } ?? false
             // pasteboardChangedOwner may arrive late or not at all, so a
             // newer copy is detected by the change count as well.
             if owner.hasLostOwnership
                 || pasteboard.changeCount != changeCount
                 || now >= deadline
-                || lastTargetRead.map({ now - $0 >= Self.quietPeriodAfterRead }) == true {
+                || targetFinishedReading {
                 break
             }
         }
@@ -175,13 +175,17 @@ final class PasteService {
 
         pendingRestore = nil
         pending.task.cancel()
+        restoreIfStillOwned(pending.snapshot, owner: pending.owner, changeCount: pending.changeCount)
+    }
 
+    private func restoreIfStillOwned(
+        _ snapshot: ClipboardSnapshot,
+        owner: TranscriptPasteboardOwner,
+        changeCount: Int
+    ) {
         // If the user copied something since the paste, their copy wins.
-        guard !pending.owner.hasLostOwnership, pasteboard.changeCount == pending.changeCount else {
-            return
-        }
-
-        pending.snapshot.restore(to: pasteboard)
+        guard !owner.hasLostOwnership, pasteboard.changeCount == changeCount else { return }
+        snapshot.restore(to: pasteboard)
     }
 
     private func activate(_ application: NSRunningApplication?) async {
