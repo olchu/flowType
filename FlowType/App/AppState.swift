@@ -246,6 +246,9 @@ final class AppState: ObservableObject {
                     timing.finish("paste failed")
                     return
                 }
+            } else {
+                pasteService.copyText(transcript)
+                timing.mark("copied to clipboard")
             }
 
             // Before .ready, so the confirmation is already up and the ready
