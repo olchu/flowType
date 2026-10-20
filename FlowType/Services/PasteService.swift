@@ -20,7 +20,29 @@ final class PasteService {
         }
     }
 
+    /// Clipboard contents a paste replaced, waiting to be put back once the
+    /// paste target has read the transcript.
+    private struct PendingRestore {
+        let snapshot: ClipboardSnapshot
+        let owner: TranscriptPasteboardOwner
+        let changeCount: Int
+        let task: Task<Void, Never>
+    }
+
+    /// Restore this long after the target's last read. Apps may read more
+    /// than one type per paste, and the reads don't arrive together.
+    private static let quietPeriodAfterRead: Duration = .milliseconds(200)
+    /// Restore anyway if the target never reads the transcript, for example
+    /// when ⌘V went nowhere or a clipboard manager read it before the paste.
+    private static let restoreTimeout: Duration = .seconds(5)
+
     private let pasteboard = NSPasteboard.general
+    private var pendingRestore: PendingRestore?
+
+    func copyText(_ text: String) {
+        settlePendingRestore()
+        copyToClipboard(text)
+    }
 
     func pasteText(
         _ text: String,
@@ -28,16 +50,75 @@ final class PasteService {
         into targetApplication: NSRunningApplication?
     ) async throws {
         guard AXIsProcessTrusted() else {
-            copyToClipboard(text)
+            copyText(text)
             throw PasteError.accessibilityPermissionMissing
         }
 
         await activate(targetApplication)
 
-        let snapshot = ClipboardSnapshot.capture(from: pasteboard)
-        copyToClipboard(text)
+        // A previous paste may still hold the clipboard. Its restore has to
+        // run first, or the snapshot below would capture that transcript
+        // instead of the user's contents.
+        settlePendingRestore()
 
         let usesSharedClipboard = isParallelsApplication(targetApplication)
+        guard restoreClipboard && !usesSharedClipboard else {
+            try await pasteKeepingTranscript(
+                text,
+                into: targetApplication,
+                usesSharedClipboard: usesSharedClipboard
+            )
+            return
+        }
+
+        let snapshot = ClipboardSnapshot.capture(from: pasteboard)
+        let owner = TranscriptPasteboardOwner(text: text)
+        let changeCount = pasteboard.declareTypes(
+            [.string] + TranscriptPasteboardOwner.concealedTypes,
+            owner: owner
+        )
+
+        let pasteSentAt = ContinuousClock.now
+        do {
+            try sendPasteCommand()
+        } catch {
+            guard insertTextUsingAccessibility(text) else {
+                // The owner doesn't outlive this call, so the transcript the
+                // error message promises has to be real data.
+                copyToClipboard(text)
+                throw error
+            }
+
+            // Inserted without the clipboard; nothing is going to read it.
+            if pasteboard.changeCount == changeCount {
+                snapshot.restore(to: pasteboard)
+            }
+            return
+        }
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await restoreAfterTargetReads(
+                owner: owner,
+                changeCount: changeCount,
+                pasteSentAt: pasteSentAt
+            )
+        }
+        pendingRestore = PendingRestore(
+            snapshot: snapshot,
+            owner: owner,
+            changeCount: changeCount,
+            task: task
+        )
+    }
+
+    private func pasteKeepingTranscript(
+        _ text: String,
+        into targetApplication: NSRunningApplication?,
+        usesSharedClipboard: Bool
+    ) async throws {
+        copyToClipboard(text)
+
         if usesSharedClipboard {
             // Parallels synchronizes the host pasteboard with the guest
             // asynchronously. Pasting immediately can insert stale guest
@@ -58,13 +139,49 @@ final class PasteService {
                 throw error
             }
         }
+    }
 
-        if restoreClipboard && !usesSharedClipboard {
-            Task {
-                try? await Task.sleep(for: .milliseconds(750))
-                snapshot.restore(to: pasteboard)
+    private func restoreAfterTargetReads(
+        owner: TranscriptPasteboardOwner,
+        changeCount: Int,
+        pasteSentAt: ContinuousClock.Instant
+    ) async {
+        let deadline = pasteSentAt + Self.restoreTimeout
+
+        while true {
+            try? await Task.sleep(for: .milliseconds(25))
+            // Cancelled when another paste or copy settled this restore.
+            guard !Task.isCancelled else { return }
+
+            let now = ContinuousClock.now
+            // Reads before ⌘V come from apps reacting to the clipboard change
+            // itself, not from the paste target.
+            let lastTargetRead = owner.textReadTimes.last { $0 >= pasteSentAt }
+            // pasteboardChangedOwner may arrive late or not at all, so a
+            // newer copy is detected by the change count as well.
+            if owner.hasLostOwnership
+                || pasteboard.changeCount != changeCount
+                || now >= deadline
+                || lastTargetRead.map({ now - $0 >= Self.quietPeriodAfterRead }) == true {
+                break
             }
         }
+
+        settlePendingRestore()
+    }
+
+    private func settlePendingRestore() {
+        guard let pending = pendingRestore else { return }
+
+        pendingRestore = nil
+        pending.task.cancel()
+
+        // If the user copied something since the paste, their copy wins.
+        guard !pending.owner.hasLostOwnership, pasteboard.changeCount == pending.changeCount else {
+            return
+        }
+
+        pending.snapshot.restore(to: pasteboard)
     }
 
     private func activate(_ application: NSRunningApplication?) async {

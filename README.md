@@ -66,7 +66,7 @@ The default mode, *Local rules*, is a set of fast built-in rules that remove rep
 
 ### Pasting
 
-FlowType puts the text on the clipboard, pastes it with `⌘V` into the app where you started dictating, then restores your previous clipboard (you can turn that off). If `⌘V` fails, the text is inserted through the Accessibility API, and if that fails too, it stays on the clipboard.
+FlowType puts the text on the clipboard, pastes it with `⌘V` into the app where you started dictating, then restores your previous clipboard (you can turn that off). The clipboard is restored once that app has actually read the text, not after a fixed delay, so a slow app never gets your old clipboard pasted instead. If you copy something in the meantime, your copy is kept. The transcript is marked as transient, so clipboard managers like Maccy, Paste and Raycast don't save it to their history. If `⌘V` fails, the text is inserted through the Accessibility API, and if that fails too, it stays on the clipboard.
 
 Parallels Desktop gets its own handling, because it syncs the clipboard with the guest OS asynchronously. With auto-paste off, the text is only copied.
 
