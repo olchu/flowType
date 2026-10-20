@@ -72,10 +72,25 @@ final class HotkeyService {
     }
 
     private func handleEvent(type: CGEventType, event: CGEvent) {
-        guard type == .flagsChanged else { return }
+        switch type {
+        case .flagsChanged:
+            updateFnState(isFnPressed: event.flags.contains(.maskSecondaryFn))
+        case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            // The system switches the tap off when the main thread stalls past
+            // the tap timeout. It stays off until re-enabled, which would
+            // leave Fn dead until the app restarts.
+            guard let eventTap else { return }
+            CGEvent.tapEnable(tap: eventTap, enable: true)
+            // A Fn release that happened while the tap was off was never
+            // delivered; without this the recording would never stop.
+            let flags = CGEventSource.flagsState(.combinedSessionState)
+            updateFnState(isFnPressed: flags.contains(.maskSecondaryFn))
+        default:
+            break
+        }
+    }
 
-        let isFnPressed = event.flags.contains(.maskSecondaryFn)
-
+    private func updateFnState(isFnPressed: Bool) {
         switch (isPressed, isFnPressed) {
         case (false, true):
             isPressed = true
