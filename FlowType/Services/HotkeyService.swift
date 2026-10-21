@@ -50,6 +50,10 @@ final class HotkeyService {
     /// Created on the first dictation and enabled only while Escape is
     /// intercepted.
     private var escapeTap: EventTap?
+    /// Whether the escape tap is on. Switched only when this changes:
+    /// switching a tap off reports .tapDisabledByUserInput to the tap
+    /// itself, and answering that by switching it off again would loop.
+    private var isEscapeTapEnabled = false
     private var isPressed = false
     /// From a swallowed Escape press until its release, so the auto-repeats
     /// and the release don't reach the app either.
@@ -83,6 +87,7 @@ final class HotkeyService {
 
         fnTap = nil
         escapeTap = nil
+        isEscapeTapEnabled = false
         isPressed = false
         isSwallowingEscape = false
         onKeyDown = nil
@@ -136,7 +141,10 @@ final class HotkeyService {
         }
 
         // A held Escape stays intercepted until its release is swallowed too.
-        escapeTap?.setEnabled(isNeeded)
+        if let escapeTap, isNeeded != isEscapeTapEnabled {
+            isEscapeTapEnabled = isNeeded
+            escapeTap.setEnabled(isNeeded)
+        }
     }
 
     private func makeEscapeTap() -> EventTap? {
@@ -161,6 +169,9 @@ final class HotkeyService {
     private func handleEscapeTapEvent(type: CGEventType, event: CGEvent) -> Bool {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            // Off now, whether the system or this app switched it off;
+            // switched back on only if it is still needed.
+            isEscapeTapEnabled = false
             updateEscapeTap()
             return false
 
