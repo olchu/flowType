@@ -64,6 +64,7 @@ enum IndicatorStyle: String, Codable, CaseIterable, Identifiable {
     case bars = "Bars"
     case waves = "Waves"
     case dots = "Dots"
+    case aurora = "Aurora"
 
     var id: Self { self }
 }

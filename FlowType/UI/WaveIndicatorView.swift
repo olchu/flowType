@@ -340,7 +340,7 @@ final class WaveEngine {
     }
 
     struct Frame {
-        static let hidden = Frame(level: 0, clock: 0, spread: 0, visibility: 0, flash: 0, scan: 0, scanAmount: 0, elapsed: 0)
+        static let hidden = Frame(level: 0, clock: 0, spread: 0, visibility: 0, flash: 0, scan: 0, scanAmount: 0, elapsed: 0, dismissalAge: nil)
 
         var level: Double
         var clock: Double
@@ -354,6 +354,8 @@ final class WaveEngine {
         var scanAmount: Double
         /// Seconds since the previous frame, capped so a stall doesn't jump.
         var elapsed: Double
+        /// Seconds since the dismissal started, nil while presented.
+        var dismissalAge: Double?
     }
 
     private var level = 0.0
@@ -428,7 +430,8 @@ final class WaveEngine {
             flash: pastedAt.map { exp(-(time - $0) * 5) } ?? 0,
             scan: sin(time * 4.8),
             scanAmount: scanAmount,
-            elapsed: elapsed
+            elapsed: elapsed,
+            dismissalAge: dismissedAt.map { time - $0 }
         )
     }
 

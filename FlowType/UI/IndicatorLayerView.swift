@@ -54,6 +54,11 @@ class IndicatorLayerView: NSView {
         }
     }
 
+    /// 30 fps is plenty for the shape layer styles.
+    var frameRateRange: CAFrameRateRange {
+        CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
+    }
+
     /// Called when a new presentation starts, before its first frame.
     func didStartPresentation() {}
 
@@ -77,7 +82,7 @@ class IndicatorLayerView: NSView {
     private func startDisplayLink() {
         guard displayLink == nil, window != nil else { return }
         let link = displayLink(target: self, selector: #selector(step(_:)))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
+        link.preferredFrameRateRange = frameRateRange
         link.add(to: .main, forMode: .common)
         displayLink = link
     }

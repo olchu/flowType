@@ -84,6 +84,8 @@ Bars is a compact pill with level bars. It shows a pulsing ellipsis while transc
 
 Dots is a field of glowing dots in columns, mirrored around a centre row like a spectrum. The columns bounce with your voice and turn white towards the middle, a bump of light sweeps across them while the text is processed, and they flash and fold in when it's pasted. It uses the same five colours as Waves.
 
+Aurora is a glass sphere with coloured smoke turning inside it: orange, violet and blue, each winding round its own axis and lit from the upper left. The smoke drifts at its own slow pace; your voice lights it up, brighter, hotter and a little thicker the louder you speak. It opens out of a black point and collapses back into one. It's drawn by a small Metal renderer, which keeps its memory use to a few megabytes.
+
 Every style appears almost instantly and collapses right after the paste. Microphone sensitivity is adjustable, and at low values the indicator ignores background noise.
 
 ### Sounds
@@ -104,7 +106,7 @@ The menu shows the current status, model loading progress, and the CPU and memor
 - Permissions: microphone and Accessibility. Changes you make in System Settings are picked up automatically.
 - Models: profile choice, model download and deletion, loading progress of the active model.
 - Transcription: language, streaming mode and text cleanup.
-- Indicator: style (Bars, Waves or Dots), colour and sensitivity, with a live preview.
+- Indicator: style (Bars, Waves, Dots or Aurora), colour and sensitivity, with a live preview.
 - Sounds: on/off, volume and cue previews.
 
 On first launch, an onboarding window offers to download the recommended model.
