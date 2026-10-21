@@ -5,6 +5,7 @@ enum TranscriptionProfile: String, CaseIterable, Codable, Identifiable {
     case balanced = "Balanced"
     case accurate = "Accurate"
     case parakeet = "Parakeet"
+    case gigaAM = "GigaAM"
 
     var id: String { rawValue }
 
@@ -18,6 +19,8 @@ enum TranscriptionProfile: String, CaseIterable, Codable, Identifiable {
             .largeV3
         case .parakeet:
             .parakeetUltra
+        case .gigaAM:
+            .gigaAMV3
         }
     }
 
@@ -31,6 +34,8 @@ enum TranscriptionProfile: String, CaseIterable, Codable, Identifiable {
             "Best accuracy, slower startup"
         case .parakeet:
             "NVIDIA Parakeet: fastest, accurate on Russian, English and 23 more European languages. No live preview while recording."
+        case .gigaAM:
+            "Sber GigaAM v3: the most accurate on Russian, writes punctuation and numbers itself. Russian only. No live preview while recording."
         }
     }
 }

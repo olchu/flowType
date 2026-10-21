@@ -11,7 +11,7 @@
 
 FlowType is a free, open-source menu bar app that lets you dictate into any app on your Mac. Hold `Fn`, speak, let go, and the text is pasted wherever your cursor is.
 
-Recognition runs on your Mac, with Whisper or NVIDIA Parakeet. Your audio stays in memory and is never written to disk, and the app needs the network only once, to download the models.
+Recognition runs on your Mac, with Whisper, NVIDIA Parakeet or Sber GigaAM. Your audio stays in memory and is never written to disk, and the app needs the network only once, to download the models.
 
 ## How it works
 
@@ -38,6 +38,7 @@ To cancel, press `Esc` while recording or while the text is being processed. Not
 | Balanced *(default)* | Whisper Large v3 Turbo, 632 MB | Good accuracy at a small size |
 | Accurate | Whisper Large v3, 947 MB | Best Whisper accuracy, slower start |
 | Parakeet | NVIDIA Parakeet TDT Ultra, 630 MB | Fastest; accurate on Russian, English and 23 more European languages |
+| GigaAM | Sber GigaAM v3 (end-to-end CTC), 420 MB | Most accurate on Russian, writes punctuation and numbers itself; Russian only |
 
 The language can be set to auto-detect, Russian or English.
 
@@ -47,7 +48,7 @@ Whisper recognises speech while you're still recording, so there's very little l
 - *Full recording* transcribes the whole recording after you release the key. It's the baseline the other modes are compared against.
 - *Stream only* uses the streaming text as is. It's the fastest mode, but the last words are less reliable.
 
-Parakeet runs on the Neural Engine and decodes the whole recording in a fraction of a second. It has no streaming preview.
+Parakeet and GigaAM run on the Neural Engine and decode the whole recording in a fraction of a second. They have no streaming preview. GigaAM takes 25 seconds at a time, so longer dictations are split at the quietest moments.
 
 Silero VAD checks whether a recording contains speech and trims the silence. Without that check, Whisper tends to hallucinate subtitle lines like "To be continued..." on silent audio.
 
@@ -124,7 +125,7 @@ On first launch, an onboarding window offers to download the recommended model.
 | Global `Fn` hotkey | `CGEvent` tap (listen-only) |
 | Recording | `AVAudioEngine`, mono PCM in memory, resampled to 16 kHz |
 | Speech detection | Silero VAD via [FluidAudio](https://github.com/FluidInference/FluidAudio) |
-| Recognition | [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) (Core ML), NVIDIA Parakeet TDT via FluidAudio |
+| Recognition | [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) (Core ML), NVIDIA Parakeet TDT via FluidAudio, Sber GigaAM v3 on Core ML |
 | Cleanup | Custom rules, LLM via [MLX Swift LM](https://github.com/ml-explore/mlx-swift-lm) |
 | Pasting | `NSPasteboard`, `CGEvent` for `⌘V`, Accessibility API |
 | UI | SwiftUI `MenuBarExtra`, `NSPanel` for the indicator, Core Animation |
@@ -201,7 +202,7 @@ FlowType is built on these open-source projects:
 - [MLX Swift](https://github.com/ml-explore/mlx-swift) and [MLX Swift LM](https://github.com/ml-explore/mlx-swift-lm) by Apple (MIT)
 - [swift-transformers](https://github.com/huggingface/swift-transformers) and [swift-huggingface](https://github.com/huggingface/swift-huggingface) by Hugging Face (Apache 2.0)
 
-Speech and language models aren't bundled with the app. They're downloaded from Hugging Face on demand and are covered by their own licenses: OpenAI Whisper, NVIDIA Parakeet, Silero VAD, Qwen and Gemma.
+Speech and language models aren't bundled with the app. They're downloaded from Hugging Face on demand and are covered by their own licenses: OpenAI Whisper, NVIDIA Parakeet, Sber GigaAM (MIT, [Core ML conversion](https://huggingface.co/inhum/gigaam-v3-coreml) by Ivan Ushakov), Silero VAD, Qwen and Gemma.
 
 ## License
 

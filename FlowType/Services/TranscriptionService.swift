@@ -43,18 +43,31 @@ final class TranscriptionService {
     private var streamTask: Task<Void, Never>?
     private let streamSnapshot = StreamSnapshotStore()
     private let parakeet = ParakeetTranscriber()
+    private let gigaAM = GigaAMTranscriber()
 
     func prewarm(model: TranscriptionModel, onProgress: (@Sendable (Double, String) -> Void)? = nil) async throws {
-        switch model.engine {
-        case .whisperKit:
-            // Only one speech model stays in memory.
-            await parakeet.unload()
-            _ = try await pipeline(for: model, shouldPrewarm: true, onProgress: onProgress)
-        case .parakeet:
+        // Only one speech model stays in memory.
+        if model.engine != .whisperKit {
             pipeline = nil
             loadedModel = nil
+        }
+        if model.engine != .parakeet {
+            await parakeet.unload()
+        }
+        if model.engine != .gigaAM {
+            await gigaAM.unload()
+        }
+
+        switch model.engine {
+        case .whisperKit:
+            _ = try await pipeline(for: model, shouldPrewarm: true, onProgress: onProgress)
+        case .parakeet:
             onProgress?(0.5, "Loading Parakeet...")
             try await parakeet.prewarm()
+            onProgress?(1, "Model ready")
+        case .gigaAM:
+            onProgress?(0.5, "Loading GigaAM...")
+            try await gigaAM.prewarm()
             onProgress?(1, "Model ready")
         }
     }
@@ -76,6 +89,11 @@ final class TranscriptionService {
                     audio.samples(resampledTo: RecordedAudio.speechSampleRate),
                     languageCode: language.whisperKitCode
                 )
+            )
+        case .gigaAM:
+            // Russian only, so the language setting doesn't apply.
+            transcript = TranscriptText.clean(
+                try await gigaAM.transcribe(audio.samples(resampledTo: RecordedAudio.speechSampleRate))
             )
         case .whisperKit:
             let pipeline = try await pipeline(for: model, shouldPrewarm: false)
@@ -214,8 +232,13 @@ final class TranscriptionService {
     }
 
     func resetLoadedModel(ifMatching model: TranscriptionModel) async {
-        if model.engine == .parakeet {
+        switch model.engine {
+        case .parakeet:
             await parakeet.unload()
+        case .gigaAM:
+            await gigaAM.unload()
+        case .whisperKit:
+            break
         }
         guard loadedModel == model else { return }
         pipeline = nil

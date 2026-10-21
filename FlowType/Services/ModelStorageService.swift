@@ -10,6 +10,8 @@ final class ModelStorageService {
             localDirectory(for: model).map { fileManager.fileExists(atPath: $0.path) } ?? false
         case .parakeet:
             ParakeetTranscriber.isDownloaded
+        case .gigaAM:
+            GigaAMTranscriber.isDownloaded
         }
     }
 
@@ -23,6 +25,8 @@ final class ModelStorageService {
             )
         case .parakeet:
             try await ParakeetTranscriber.download()
+        case .gigaAM:
+            try await GigaAMTranscriber.download()
         }
     }
 
@@ -30,6 +34,7 @@ final class ModelStorageService {
         let directory = switch model.engine {
         case .whisperKit: localDirectory(for: model)
         case .parakeet: ParakeetTranscriber.cacheDirectory
+        case .gigaAM: GigaAMTranscriber.directory
         }
         guard let directory, fileManager.fileExists(atPath: directory.path) else { return }
         try fileManager.removeItem(at: directory)
