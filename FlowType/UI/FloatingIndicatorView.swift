@@ -73,6 +73,8 @@ struct FloatingIndicatorView: View {
                 DotsIndicatorView(model: model)
             case .aurora:
                 AuroraIndicatorView(model: model)
+            case .particles:
+                ParticleFieldIndicatorView(model: model)
             case .bars:
                 Capsule()
                     .fill(.black)
@@ -280,7 +282,7 @@ extension IndicatorStyle {
     /// Whether the style is drawn in one of the WaveColor themes.
     var usesWaveColor: Bool {
         switch self {
-        case .bars, .aurora:
+        case .bars, .aurora, .particles:
             false
         case .waves, .dots:
             true
@@ -298,6 +300,8 @@ extension IndicatorStyle {
             DotsIndicatorView.size
         case .aurora:
             AuroraIndicatorView.size
+        case .particles:
+            ParticleFieldIndicatorView.size
         }
     }
 
@@ -308,7 +312,7 @@ extension IndicatorStyle {
         switch self {
         case .bars:
             20
-        case .waves, .dots:
+        case .waves, .dots, .particles:
             -10
         case .aurora:
             -3
@@ -322,7 +326,7 @@ extension IndicatorStyle {
         switch self {
         case .bars:
             0.19
-        case .waves, .dots:
+        case .waves, .dots, .particles:
             0.32
         case .aurora:
             AuroraIndicatorView.dismissalDuration
@@ -337,7 +341,7 @@ extension IndicatorStyle {
         switch self {
         case .bars:
             .milliseconds(650)
-        case .waves, .dots, .aurora:
+        case .waves, .dots, .aurora, .particles:
             .milliseconds(100)
         }
     }

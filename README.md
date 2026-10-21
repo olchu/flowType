@@ -86,6 +86,8 @@ Dots is a field of glowing dots in columns, mirrored around a centre row like a 
 
 Aurora is a glass sphere with coloured smoke turning inside it: orange, violet and blue, each winding round its own axis and lit from the upper left. The smoke drifts at its own slow pace; your voice lights it up, brighter, hotter and a little thicker the louder you speak. It opens out of a black point and collapses back into one. It's drawn by a small Metal renderer, which keeps its memory use to a few megabytes.
 
+Particles is a field of glowing dots seen in perspective, swelling slowly like a small landscape. Your voice raises its hills and lights it up: the higher a dot, the brighter and warmer it is, from blue in the hollows to violet and pink on the peaks. Like the waves, it gathers out of the middle and folds back into it. It's drawn with Metal too.
+
 Every style appears almost instantly and collapses right after the paste. Microphone sensitivity is adjustable, and at low values the indicator ignores background noise.
 
 ### Sounds
@@ -106,7 +108,7 @@ The menu shows the current status, model loading progress, and the CPU and memor
 - Permissions: microphone and Accessibility. Changes you make in System Settings are picked up automatically.
 - Models: profile choice, model download and deletion, loading progress of the active model.
 - Transcription: language, streaming mode and text cleanup.
-- Indicator: style (Bars, Waves, Dots or Aurora), colour and sensitivity, with a live preview.
+- Indicator: style (Bars, Waves, Dots, Aurora or Particles), colour and sensitivity, with a live preview.
 - Sounds: on/off, volume and cue previews.
 
 On first launch, an onboarding window offers to download the recommended model.

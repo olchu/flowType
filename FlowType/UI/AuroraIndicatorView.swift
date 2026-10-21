@@ -8,9 +8,8 @@ import SwiftUI
 /// own; the voice lights it up, brighter and hotter the louder it is. It
 /// opens out of a black point and collapses back into one.
 ///
-/// Drawn by AuroraRenderer on a CAMetalLayer: volumetric smoke and the
-/// soft glow can't be had from shape layers. Its own small pipeline costs
-/// a few drawables, not SwiftUI's Metal renderer.
+/// Drawn by AuroraRenderer with Metal: volumetric smoke and the soft glow
+/// can't be had from shape layers.
 struct AuroraIndicatorView: NSViewRepresentable {
     @ObservedObject var model: FloatingIndicatorModel
 
@@ -46,10 +45,9 @@ private let sharedRenderer: AuroraRenderer? = {
     return AuroraRenderer(device: device, library: library)
 }()
 
-final class AuroraLayerView: IndicatorLayerView {
+final class AuroraLayerView: MetalIndicatorLayerView {
     private static let sphereRadius: CGFloat = 22
 
-    private let metalLayer = CAMetalLayer()
     /// Voice level with a quick attack and a slow release, so words show at
     /// once and pauses calm down gradually.
     private var level = 0.0
@@ -65,21 +63,11 @@ final class AuroraLayerView: IndicatorLayerView {
     /// and goes dark before collapsing.
     private var glow = 0.0
 
-    /// The smoke moves continuously, so it gets the full frame rate; the
-    /// renderer is cheap at this size.
-    override var frameRateRange: CAFrameRateRange {
-        CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
-    }
-
     init(frame frameRect: NSRect, model: FloatingIndicatorModel) {
-        super.init(frame: frameRect, model: model, style: .aurora)
-        setUpLayer()
-    }
-
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        metalLayer.contentsScale = window?.backingScaleFactor ?? 2
-        updateDrawableSize()
+        super.init(
+            frame: frameRect, model: model, style: .aurora,
+            device: sharedRenderer?.device, pixelFormat: AuroraRenderer.pixelFormat
+        )
     }
 
     override func didStartPresentation() {
@@ -92,24 +80,6 @@ final class AuroraLayerView: IndicatorLayerView {
         glow = 0
     }
 
-    private func setUpLayer() {
-        guard let layer, let renderer = sharedRenderer else { return }
-
-        metalLayer.device = renderer.device
-        metalLayer.pixelFormat = AuroraRenderer.pixelFormat
-        metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
-        metalLayer.framebufferOnly = true
-        metalLayer.isOpaque = false
-        metalLayer.frame = bounds
-        layer.addSublayer(metalLayer)
-        updateDrawableSize()
-    }
-
-    private func updateDrawableSize() {
-        let scale = metalLayer.contentsScale
-        metalLayer.drawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
-    }
-
     override func render(_ frame: WaveEngine.Frame) {
         // While processing the smoke stays gently lit under the sweep, at
         // about a third of full light.
@@ -120,10 +90,7 @@ final class AuroraLayerView: IndicatorLayerView {
         phase += frame.elapsed
         advancePresence(by: frame.elapsed, dismissalAge: frame.dismissalAge)
 
-        // Once the panel is hidden or covered its drawables aren't returned,
-        // and nextDrawable() would block the main thread waiting for one.
-        guard window?.occlusionState.contains(.visible) == true else { return }
-        guard let renderer = sharedRenderer, let drawable = metalLayer.nextDrawable() else { return }
+        guard let renderer = sharedRenderer, let drawable = nextDrawable() else { return }
 
         let uniforms = AuroraRenderer.Uniforms(
             size: SIMD2(Float(metalLayer.drawableSize.width), Float(metalLayer.drawableSize.height)),
