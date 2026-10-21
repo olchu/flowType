@@ -27,7 +27,7 @@ struct OnboardingView: View {
 
     private var modelCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            LabeledContent("Recommended profile") {
+            LabeledContent("Profile") {
                 Text(appState.settings.profile.rawValue)
                     .foregroundStyle(.secondary)
             }

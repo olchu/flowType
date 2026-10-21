@@ -112,7 +112,7 @@ The menu shows the current status, model loading progress, and the CPU and memor
 - Indicator: style (Bars, Waves, Dots, Aurora or Particles), colour and sensitivity, with a live preview.
 - Sounds: on/off, volume and cue previews.
 
-On first launch, an onboarding window offers to download the recommended model.
+On first launch, an onboarding window offers to download the selected model.
 
 ## Under the hood
 

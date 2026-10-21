@@ -78,19 +78,8 @@ private struct ProfileRow: View {
                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.5))
 
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(profile.rawValue)
-                            .font(.headline)
-
-                        if profile == .balanced {
-                            Text("Recommended")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(Color.accentColor)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1)
-                                .background(Color.accentColor.opacity(0.12), in: .capsule)
-                        }
-                    }
+                    Text(profile.rawValue)
+                        .font(.headline)
 
                     Text(profile.detail)
                         .font(.callout)
