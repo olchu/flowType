@@ -316,7 +316,7 @@ extension IndicatorStyle {
         case .waves, .dots, .particles:
             -10
         case .aurora:
-            -12
+            -24
         }
     }
 

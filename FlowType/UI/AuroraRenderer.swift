@@ -10,12 +10,14 @@ final class AuroraRenderer {
         var phase: Float
         var energy: Float
         var accent: Float
-        var glow: Float
         var flash: Float
         var processing: Float
         var scan: Float
         var squash: Float
         var burst: Float
+        var burstSeed: Float
+        var burstSpin: Float
+        var glass: Float
     }
 
     static let pixelFormat = MTLPixelFormat.bgra8Unorm
@@ -88,9 +90,8 @@ final class AuroraRenderer {
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
             encoder.setRenderPipelineState(glassPipeline)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-            // While the sphere opens dark, and once the burst is over, there
-            // is no smoke to draw.
-            if uniforms.glow > 0 && uniforms.burst < 1 {
+            // Once the burst is over there is no smoke to draw.
+            if uniforms.burst < 1 {
                 encoder.setRenderPipelineState(smokePipeline)
                 encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             }
