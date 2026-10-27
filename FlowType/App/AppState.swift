@@ -290,7 +290,8 @@ final class AppState: ObservableObject {
             let cleanupResult = await transcriptCleanupService.clean(
                 rawTranscript,
                 mode: settings.cleanupMode,
-                model: settings.cleanupModel
+                model: settings.cleanupModel,
+                rules: settings.textRules
             )
             let transcript = cleanupResult.text
             timing.mark(

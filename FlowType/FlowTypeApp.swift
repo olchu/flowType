@@ -45,7 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let service = TranscriptCleanupService()
                 try? await service.prewarmLocalLLM(model: Self.cleanupModelArgument)
                 let start = ContinuousClock.now
-                let result = await service.clean(transcript, mode: .localLLM, model: Self.cleanupModelArgument)
+                let result = await service.clean(
+                    transcript, mode: .localLLM, model: Self.cleanupModelArgument,
+                    rules: SettingsStorageService().load().textRules
+                )
                 let elapsed = start.duration(to: .now)
                 print(result.text)
                 print("decision=\(result.decision)")

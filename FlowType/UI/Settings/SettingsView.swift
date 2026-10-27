@@ -6,6 +6,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case permissions
     case models
     case transcription
+    case textRules
     case indicator
     case sounds
 
@@ -21,6 +22,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             "Models"
         case .transcription:
             "Transcription"
+        case .textRules:
+            "Text Rules"
         case .indicator:
             "Indicator"
         case .sounds:
@@ -38,6 +41,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             "cpu.fill"
         case .transcription:
             "text.bubble.fill"
+        case .textRules:
+            "text.badge.checkmark"
         case .indicator:
             "waveform"
         case .sounds:
@@ -55,6 +60,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             .purple
         case .transcription:
             .orange
+        case .textRules:
+            .green
         case .indicator:
             .teal
         case .sounds:
@@ -143,6 +150,8 @@ struct SettingsView: View {
                 ModelsSettingsPane()
             case .transcription:
                 TranscriptionSettingsPane()
+            case .textRules:
+                TextRulesSettingsPane()
             case .indicator:
                 IndicatorSettingsPane()
             case .sounds:

@@ -33,7 +33,7 @@ enum TranscriptCleanupMode: String, Codable, CaseIterable, Identifiable {
         case .localLLM:
             "Local rules plus an on-device model for punctuation and obvious recognition errors. Edits that add or drop words are rejected."
         case .off:
-            "Keeps only the basic WhisperKit text cleanup."
+            "Keeps only the basic WhisperKit text cleanup. Text rules still apply."
         }
     }
 }
@@ -106,6 +106,10 @@ struct AppSettings: Codable, Equatable {
     var finalizationMode: TranscriptionFinalizationMode = .streamTail
     var cleanupMode: TranscriptCleanupMode = .localRules
     var cleanupModel: CleanupLLMModel = .qwen25_1_5B
+    var removesFillerWords = true
+    var fillerWords = FillerWords.defaults
+    var writesNumbersAsDigits = true
+    var keepsSmallNumbersAsWords = true
     var autoPaste = true
     var restoreClipboard = true
     var microphoneSensitivity = 0.5
@@ -117,6 +121,15 @@ struct AppSettings: Codable, Equatable {
     var soundVolume = 0.5
 
     init() {}
+
+    var textRules: TextRules {
+        TextRules(
+            removesFillerWords: removesFillerWords,
+            fillerWords: fillerWords,
+            writesNumbersAsDigits: writesNumbersAsDigits,
+            keepsSmallNumbersAsWords: keepsSmallNumbersAsWords
+        )
+    }
 
     var indicatorAppearance: IndicatorAppearance {
         IndicatorAppearance(style: indicatorStyle, waveColor: waveColor, auroraPalette: auroraPalette)
@@ -130,6 +143,10 @@ struct AppSettings: Codable, Equatable {
         finalizationMode = try container.decodeIfPresent(TranscriptionFinalizationMode.self, forKey: .finalizationMode) ?? defaults.finalizationMode
         cleanupMode = try container.decodeIfPresent(TranscriptCleanupMode.self, forKey: .cleanupMode) ?? defaults.cleanupMode
         cleanupModel = (try? container.decodeIfPresent(CleanupLLMModel.self, forKey: .cleanupModel)) ?? defaults.cleanupModel
+        removesFillerWords = try container.decodeIfPresent(Bool.self, forKey: .removesFillerWords) ?? defaults.removesFillerWords
+        fillerWords = try container.decodeIfPresent([String].self, forKey: .fillerWords) ?? defaults.fillerWords
+        writesNumbersAsDigits = try container.decodeIfPresent(Bool.self, forKey: .writesNumbersAsDigits) ?? defaults.writesNumbersAsDigits
+        keepsSmallNumbersAsWords = try container.decodeIfPresent(Bool.self, forKey: .keepsSmallNumbersAsWords) ?? defaults.keepsSmallNumbersAsWords
         autoPaste = try container.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? defaults.autoPaste
         restoreClipboard = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? defaults.restoreClipboard
         microphoneSensitivity = try container.decodeIfPresent(Double.self, forKey: .microphoneSensitivity) ?? defaults.microphoneSensitivity

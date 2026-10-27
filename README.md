@@ -60,6 +60,10 @@ The model is warmed up in advance and stays in memory, with loading progress sho
 
 The default mode, *Local rules*, is a set of fast built-in rules that remove repeated fragments and typical Whisper artefacts. *Off* leaves only basic cleanup.
 
+*Settings → Text Rules* holds rules applied after recognition in every mode, each with its own switch. *Remove filler words* takes out words from an editable list (“ну”, “типа”, “как бы”, “короче”, “like”, “you know”, “I mean” and others). A word goes only where it stands apart, at the start of a phrase or between commas, so “Ну, короче, давай” becomes “Давай” while “что-то типа этого” stays. Hesitation sounds like “э”, “ммм”, “uh” and “um” always go.
+
+*Write numbers as digits* works in Russian and English. Russian numbers turn into digits in any case: “двадцати пяти” becomes 25, “двадцать первый” becomes 21-й, “двадцать пять процентов” becomes 25%, “пять тысяч рублей” becomes 5000 ₽ and “в девять тридцать” becomes в 9:30. Dates and years are written as in edited text, “25 октября” and “в 2026 году”. In English, “twenty-five” becomes 25, “twenty-first” becomes 21st, “five dollars” becomes $5, “at nine thirty” becomes at 9:30 and “nineteen ninety” becomes 1990. Numbers under ten stay words unless you switch that off, so “у меня два кота” and “two cats” are left alone.
+
 *Local LLM* applies the same rules and then runs a small language model on your Mac, built on [MLX](https://github.com/ml-explore/mlx-swift-lm), to fix punctuation and obvious recognition errors. If its edit adds or drops more than a stray word, FlowType throws it out and keeps the rule-based text.
 
 | Model | Size | Notes |
@@ -111,7 +115,8 @@ The menu shows the current status, model loading progress, and the CPU and memor
 - Permissions: microphone and Accessibility. Changes you make in System Settings are picked up automatically.
 - Models: profile choice, model download and deletion, loading progress of the active model.
 - Transcription: language, streaming mode and text cleanup.
-- Indicator: style (Bars, Waves, Dots, Aurora or Particles), colour and sensitivity, with a live preview.
+- Text Rules: rules applied to the text after recognition, each with its own switch: filler words and numbers as digits.
+- Indicator: style (Bars, Waves, Dots, Aurora or Particles), colour or palette and sensitivity, with a live preview.
 - Sounds: on/off, volume and cue previews.
 
 On first launch, an onboarding window offers to download the selected model.

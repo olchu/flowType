@@ -17,7 +17,16 @@ actor TranscriptCleanupService {
         try await localLLM.prewarm(model: model)
     }
 
-    func clean(_ transcript: String, mode: TranscriptCleanupMode, model: CleanupLLMModel) async -> Result {
+    /// `rules` apply in every mode, to the final text: after the model, so
+    /// the model reads the words as spoken and can't undo a rule.
+    func clean(
+        _ transcript: String, mode: TranscriptCleanupMode, model: CleanupLLMModel, rules: TextRules
+    ) async -> Result {
+        let result = await clean(transcript, mode: mode, model: model)
+        return Result(text: rules.apply(to: result.text), decision: result.decision)
+    }
+
+    private func clean(_ transcript: String, mode: TranscriptCleanupMode, model: CleanupLLMModel) async -> Result {
         let baseline = TranscriptText.clean(transcript)
 
         switch mode {
