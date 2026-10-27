@@ -305,9 +305,10 @@ extension IndicatorStyle {
         }
     }
 
-    /// Gap between the Dock and the bottom of the frame. The waves and dots
-    /// frames have a transparent glow margin, so they can dip slightly behind
-    /// the Dock and still keep the drawing above it.
+    /// Gap between the Dock and the bottom of the frame. The waves, dots,
+    /// particles and aurora frames have a transparent margin for their glow
+    /// (and for the aurora, its swell and burst), so they can dip behind the
+    /// Dock and still keep the drawing above it.
     var bottomInset: CGFloat {
         switch self {
         case .bars:
@@ -315,7 +316,7 @@ extension IndicatorStyle {
         case .waves, .dots, .particles:
             -10
         case .aurora:
-            -3
+            -12
         }
     }
 
@@ -334,9 +335,9 @@ extension IndicatorStyle {
     }
 
     /// How long the pasted confirmation stays before the dismissal starts.
-    /// The pill needs time to pop open and bounce the checkmark; the waves
-    /// and dots flash fades within 0.2 s, so they collapse almost at once and
-    /// the flash plays out during the collapse.
+    /// The pill needs time to pop open and bounce the checkmark; the other
+    /// styles' flash fades within 0.2 s, so they dismiss almost at once and
+    /// the flash plays out during the dismissal.
     var pastedHoldDuration: Duration {
         switch self {
         case .bars:

@@ -6,13 +6,14 @@ struct AuroraUniforms {
     float2 size;        // drawable size in pixels
     float radius;       // sphere radius in pixels
     float phase;        // motion clock, in seconds
-    float level;        // smoothed voice level, 0...1
+    float energy;       // lift from the voice, and while processing, 0...1
     float accent;       // short lift on syllables and peaks, 0...1
-    float glow;         // 0 a dark ball with no light in it, 1 fully lit (intro and dismissal)
-    float visibility;   // overall fade
+    float glow;         // 0 a dark ball with no light in it, 1 fully lit (intro)
     float flash;        // paste flash
     float processing;   // 0...1 while the text is processed
     float scan;         // processing sweep position, -1...1
+    float squash;       // jelly wobble: above 0 wider and flatter, below 0 taller
+    float burst;        // dismissal: 0 an intact bubble, 1 popped and the smoke gone
 };
 
 struct FullscreenVertex {
@@ -26,29 +27,36 @@ vertex FullscreenVertex auroraFullscreenVertex(uint id [[vertex_id]]) {
     return out;
 }
 
-/// Sphere coordinates of a pixel: centre at 0, rim at 1, y up.
+/// Sphere coordinates of a pixel: centre at 0, rim at 1, y up. The jelly
+/// wobble squeezes them, so the glass and the smoke wobble together.
 static float2 sphereCoordinates(float2 pixel, constant AuroraUniforms& u) {
     float2 p = (pixel - u.size * 0.5) / u.radius;
     p.y = -p.y;
-    return p;
+    return p * float2(1.0 - u.squash, 1.0 + u.squash);
+}
+
+/// How far the burst has gone, eased: fast at the pop, slowing as the
+/// smoke drifts off.
+static float burstSpread(constant AuroraUniforms& u) {
+    return 1.0 - pow(1.0 - u.burst, 3.0);
+}
+
+/// How much of the glass is left: it vanishes in the first moment of the
+/// burst, with nothing flying off, so the pop is felt only in the smoke
+/// breaking loose.
+static float glassLeft(constant AuroraUniforms& u) {
+    return 1.0 - smoothstep(0.0, 0.1, u.burst);
 }
 
 /// Coverage of the sphere at distance `r` from its centre, with a soft
-/// edge about a pixel and a half wide.
-static float insideSphere(float r, constant AuroraUniforms& u) {
-    return 1.0 - smoothstep(1.0 - 1.5 / u.radius, 1.0, r);
-}
-
-/// The voice level, lifted so ordinary speech (a level of 0.1 to 0.25)
-/// already lights the smoke to about half to three quarters, and loud
-/// speech closes in on full without a hard ceiling.
-static float voiceEnergy(constant AuroraUniforms& u) {
-    return 1.0 - exp(-6.0 * u.level);
+/// edge about a pixel and a half wide, plus `softness` more.
+static float insideSphere(float r, constant AuroraUniforms& u, float softness = 0.0) {
+    return 1.0 - smoothstep(1.0 - 1.5 / u.radius - softness, 1.0, r);
 }
 
 /// Overall light level, with the paste flash and the processing sweep.
 static float brightness(constant AuroraUniforms& u, float x) {
-    float energy = voiceEnergy(u);
+    float energy = u.energy;
     float b = (0.45 + 2.0 * energy + 0.7 * u.accent + 1.2 * u.flash) * (0.85 + 0.3 * u.processing);
     return b * (1.0 + 0.7 * u.processing * exp(-pow((x - u.scan * 0.8) / 0.3, 2.0)));
 }
@@ -154,8 +162,8 @@ static Smoke smokeAt(int index) {
 }
 
 /// Where the point `q` inside the unit sphere lands in a smoke's noise:
-/// turned about its axis and stirred by a slow current. The smoke moves on
-/// its own, at its own pace; the voice never shapes it.
+/// turned about its axis and stirred by a slow current. The voice only
+/// speeds up the clock `t`; it never changes the shapes.
 static float3 stirredPoint(float3 q, Smoke s, float t) {
     // The smoke turns faster near the middle than at the glass, so it
     // winds into a spiral.
@@ -180,17 +188,43 @@ static float smokeDensity(float3 stirred, float t) {
 }
 
 /// Three coloured smokes turning inside the glass. Added over the glass
-/// interior; the alpha channel stays untouched.
+/// interior; the alpha channel stays untouched. When the bubble bursts the
+/// smoke, no longer held in, tears into tongues flying off at their own
+/// pace, frays in the air and dissolves from the holes outward.
 fragment float4 auroraSmokeFragment(FullscreenVertex in [[stage_in]], constant AuroraUniforms& u [[buffer(0)]]) {
+    float spread = burstSpread(u);
     float2 p = sphereCoordinates(in.position.xy, u);
+    if (u.burst > 0) {
+        // Each direction reaches out at its own pace, so the cloud splits
+        // into tongues; looking back along this pixel's direction finds the
+        // smoke that has flown out to it.
+        float2 direction = p / max(length(p), 1e-4);
+        float reach = 0.25 + 0.8 * smoothstep(0.35, 0.65, fbm(float3(direction * 1.8, 5.0), 2));
+        p /= 1.0 + spread * reach;
+        // A turbulence growing as it goes frays the tongues.
+        float3 air = float3(p * 2.2, u.phase * 0.6);
+        p += (float2(noise(air), noise(air + 7.3)) - 0.5) * 0.7 * spread;
+        p.y -= 0.12 * spread;
+    }
     float r = length(p);
-    float inside = insideSphere(r, u);
+    // Without the glass the smoke has no sharp edge.
+    float inside = insideSphere(r, u, 0.4 * spread);
     if (inside <= 0) {
         return float4(0);
     }
+    // Holes in the smoke grow through the burst; 1 where it is still whole.
+    float whole = 1.0;
+    if (u.burst > 0) {
+        // They open slowly at first, then eat the rest.
+        float threshold = mix(0.0, 0.75, u.burst * u.burst);
+        whole = smoothstep(threshold, threshold + 0.12, fbm(float3(p * 3.0 + 4.0, u.phase * 0.4), 3));
+        if (whole <= 0) {
+            return float4(0);
+        }
+    }
 
     float light = brightness(u, p.x);
-    float energy = voiceEnergy(u);
+    float energy = u.energy;
     // A point inside the sphere behind this pixel; the glass bends the view
     // a little towards the rim.
     float z = sqrt(max(0.0, 1.0 - r * r));
@@ -209,6 +243,7 @@ fragment float4 auroraSmokeFragment(FullscreenVertex in [[stage_in]], constant A
         }
         float3 stirred = stirredPoint(q, s, u.phase);
         float density = smokeDensity(stirred, u.phase) * home;
+        density *= whole;
         if (density <= 0.001) {
             continue;
         }
@@ -224,7 +259,14 @@ fragment float4 auroraSmokeFragment(FullscreenVertex in [[stage_in]], constant A
         color += tint * density * (0.4 + 0.6 * shade) * s.strength;
     }
 
-    color *= light * depth * inside * 1.1 * u.glow;
+    // Breaking loose, the smoke flares for a moment, then fades as the
+    // holes take it.
+    float release = 1.0 + 0.6 * exp(-u.burst * 12.0) * smoothstep(0.0, 0.03, u.burst);
+    color *= light * depth * inside * 1.1 * u.glow * release * (1.0 - u.burst * u.burst);
+    // Smoke flying off fades out before the edges of the frame instead of
+    // being cut by them.
+    float2 margin = min(in.position.xy, u.size - in.position.xy);
+    color *= smoothstep(0.0, 0.12 * min(u.size.x, u.size.y), min(margin.x, margin.y));
     return float4(color, 0);
 }
 
@@ -236,7 +278,7 @@ fragment float4 auroraGlassFragment(FullscreenVertex in [[stage_in]], constant A
     float2 p = sphereCoordinates(in.position.xy, u);
     float r = length(p);
     float pixel = 1.0 / u.radius;
-    float energy = voiceEnergy(u);
+    float energy = u.energy;
     float inside = insideSphere(r, u);
 
     // Blue and white along the top, violet and magenta round the sides and
@@ -264,18 +306,20 @@ fragment float4 auroraGlassFragment(FullscreenVertex in [[stage_in]], constant A
         float2 spot = (p - float2(-0.4, 0.6)) / float2(0.36, 0.14);
         float reflection = exp(-dot(spot, spot)) * 0.25;
         float3 shell = rimColor * (band + hairline + innerRing + fresnel) + float3(0.75, 0.85, 1.0) * reflection;
-        color += shell * (0.8 + 0.7 * energy + 0.4 * u.accent + 0.8 * u.flash) * u.glow;
+        color += shell * (0.8 + 1.2 * energy + 0.5 * u.accent + 0.8 * u.flash) * u.glow;
         color *= inside;
         alpha = 0.94 * inside;
     }
 
-    // A faint glow around the glass.
+    // A glow around the glass, faint at rest, wider and brighter with the
+    // voice.
     float outside = max(0.0, r - 1.0);
-    float halo = exp(-outside / (0.06 + 0.06 * energy)) * (1.0 - inside) * (0.05 + 0.3 * energy + 0.15 * u.accent + 0.5 * u.flash) * u.glow;
+    float halo = exp(-outside / (0.06 + 0.1 * energy)) * (1.0 - inside) * (0.05 + 0.6 * energy + 0.25 * u.accent + 0.5 * u.flash) * u.glow;
     color += rimColor * halo;
     alpha = max(alpha, saturate(halo * 0.9));
 
-    return float4(color, alpha);
+    // The burst takes the whole glass away at once.
+    return float4(color, alpha) * glassLeft(u);
 }
 
 // MARK: - Output
@@ -300,5 +344,5 @@ fragment float4 auroraOutputFragment(FullscreenVertex in [[stage_in]],
 
     color = 1.0 - exp(-color * 1.15);
     float alpha = saturate(max(sample.a, max(color.r, max(color.g, color.b))));
-    return float4(color, alpha) * u.visibility;
+    return float4(color, alpha);
 }
