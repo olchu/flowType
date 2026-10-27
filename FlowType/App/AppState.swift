@@ -16,6 +16,9 @@ final class AppState: ObservableObject {
         didSet {
             guard settings != oldValue else { return }
             settingsStorageService.save(settings)
+            if settings.indicatorAppearance != oldValue.indicatorAppearance {
+                updateFloatingIndicator()
+            }
             if settings.profile != oldValue.profile {
                 prewarmCurrentModel()
             }
@@ -702,8 +705,7 @@ final class AppState: ObservableObject {
         floatingIndicatorController.update(
             for: status,
             isModelLoading: isModelWarmingUp,
-            style: settings.indicatorStyle,
-            waveColor: settings.waveColor
+            appearance: settings.indicatorAppearance
         )
     }
 

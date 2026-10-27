@@ -10,17 +10,17 @@ final class FloatingIndicatorController {
     /// ready status that follows a paste must not cut it short.
     private var isShowingPasted = false
 
-    func update(for status: AppStatus, isModelLoading: Bool, style: IndicatorStyle, waveColor: WaveColor) {
+    func update(for status: AppStatus, isModelLoading: Bool, appearance: IndicatorAppearance) {
         if isModelLoading {
             cancelPendingHide()
-            present(.loading, style: style, waveColor: waveColor)
+            present(.loading, appearance: appearance)
             return
         }
 
         switch status {
         case .recording, .transcribing:
             cancelPendingHide()
-            present(.status(status), style: style, waveColor: waveColor)
+            present(.status(status), appearance: appearance)
         case .ready:
             guard !isShowingPasted else { return }
             cancelPendingHide()
@@ -28,14 +28,14 @@ final class FloatingIndicatorController {
         case .error:
             guard panel?.isVisible == true else { return }
             cancelPendingHide()
-            present(.status(status), style: style, waveColor: waveColor)
+            present(.status(status), appearance: appearance)
             scheduleHide(after: .milliseconds(850))
         }
     }
 
     func showPasted() {
         cancelPendingHide()
-        present(.pasted, style: model.style, waveColor: model.waveColor)
+        present(.pasted, appearance: model.appearance)
         scheduleHide(after: model.style.pastedHoldDuration)
     }
 
@@ -45,15 +45,15 @@ final class FloatingIndicatorController {
         model.audioLevel = level
     }
 
-    private func present(_ content: FloatingIndicatorModel.Content, style: IndicatorStyle, waveColor: WaveColor) {
-        let panel = panel ?? makePanel(style: style)
+    private func present(_ content: FloatingIndicatorModel.Content, appearance: IndicatorAppearance) {
+        let panel = panel ?? makePanel(style: appearance.style)
         self.panel = panel
         isShowingPasted = content == .pasted
         // An interrupted dismissal is taken back by `show`; only a hidden
         // panel starts over with the intro.
         let startsNewPresentation = !panel.isVisible
 
-        model.show(content, style: style, waveColor: waveColor, startsNewPresentation: startsNewPresentation)
+        model.show(content, appearance: appearance, startsNewPresentation: startsNewPresentation)
 
         position(panel)
         if startsNewPresentation {

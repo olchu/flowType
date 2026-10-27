@@ -10,8 +10,7 @@ final class FloatingIndicatorModel: ObservableObject {
     }
 
     @Published private(set) var content: Content
-    @Published private(set) var style: IndicatorStyle
-    @Published private(set) var waveColor: WaveColor
+    @Published private(set) var appearance: IndicatorAppearance
     @Published private(set) var presentationID = 0
     /// Cleared by `show`, so a dismissal can be taken back while it runs.
     @Published private(set) var isDismissing = false
@@ -23,24 +22,20 @@ final class FloatingIndicatorModel: ObservableObject {
     init(
         content: Content = .status(.ready),
         audioLevel: Double = 0,
-        style: IndicatorStyle = .bars,
-        waveColor: WaveColor = .blue
+        style: IndicatorStyle = .bars
     ) {
         self.content = content
         self.audioLevel = audioLevel
-        self.style = style
-        self.waveColor = waveColor
+        appearance = IndicatorAppearance(style: style)
     }
 
-    func show(
-        _ content: Content,
-        style: IndicatorStyle,
-        waveColor: WaveColor,
-        startsNewPresentation: Bool
-    ) {
+    var style: IndicatorStyle { appearance.style }
+    var waveColor: WaveColor { appearance.waveColor }
+    var auroraPalette: AuroraPalette { appearance.auroraPalette }
+
+    func show(_ content: Content, appearance: IndicatorAppearance, startsNewPresentation: Bool) {
         self.content = content
-        self.style = style
-        self.waveColor = waveColor
+        self.appearance = appearance
         isDismissing = false
 
         if startsNewPresentation {
@@ -279,6 +274,16 @@ private struct PastedStatusView: View {
 }
 
 extension IndicatorStyle {
+    /// Whether the style is drawn in one of the AuroraPalette palettes.
+    var usesAuroraPalette: Bool {
+        switch self {
+        case .aurora:
+            true
+        case .bars, .waves, .dots, .particles:
+            false
+        }
+    }
+
     /// Whether the style is drawn in one of the WaveColor themes.
     var usesWaveColor: Bool {
         switch self {
@@ -316,7 +321,7 @@ extension IndicatorStyle {
         case .waves, .dots, .particles:
             -10
         case .aurora:
-            -24
+            AuroraIndicatorView.sphereCenterAboveDock - AuroraIndicatorView.size.height / 2
         }
     }
 

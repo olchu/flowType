@@ -201,8 +201,7 @@ struct WaveTunerView: View {
     private func show(startsNewPresentation: Bool) {
         model.show(
             .status(isProcessing ? .transcribing : .recording),
-            style: .waves,
-            waveColor: appState.settings.waveColor,
+            appearance: IndicatorAppearance(style: .waves, waveColor: appState.settings.waveColor),
             startsNewPresentation: startsNewPresentation
         )
     }

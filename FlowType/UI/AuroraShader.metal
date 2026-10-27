@@ -6,17 +6,37 @@ struct AuroraUniforms {
     float2 size;        // drawable size in pixels
     float radius;       // sphere radius in pixels
     float phase;        // motion clock, in seconds
-    float energy;       // lift from the voice, and while processing, 0...1
+    float light;        // lift from the voice, while processing and in the clot, 0...1
     float accent;       // short lift on syllables and peaks, 0...1
     float flash;        // paste flash
     float processing;   // 0...1 while the text is processed
-    float scan;         // processing sweep position, -1...1
+    float swirl;        // turn of the whirl while processing, in radians
     float squash;       // jelly wobble: above 0 wider and flatter, below 0 taller
     float burst;        // 0 an intact bubble, 1 popped and the smoke gone; run backwards to appear
     float burstSeed;    // picks this burst's own tongues
     float burstSpin;    // how far, and which way, the smoke spirals out, in radians
     float glass;        // how much of the glass there is, 0...1
 };
+
+/// Must match AuroraColorSet in AuroraIndicatorView.swift; alpha is unused.
+struct AuroraColorSet {
+    float4 dim[3];      // thin parts of the three smokes
+    float4 bright[3];   // their thick parts
+    float4 rimSide;     // the glass rim round the sides and bottom
+    float4 rimTop;      // and along the top
+};
+
+/// Must match AuroraColors in AuroraIndicatorView.swift.
+struct AuroraColors {
+    AuroraColorSet listening;
+    AuroraColorSet thinking;
+};
+
+/// One of the palette's colours, gone as far over to its thinking colour as
+/// the bubble has gone over to thinking.
+static float3 paletteColor(float4 listening, float4 thinking, constant AuroraUniforms& u) {
+    return mix(listening.rgb, thinking.rgb, u.processing);
+}
 
 struct FullscreenVertex {
     float4 position [[position]];
@@ -47,13 +67,6 @@ static float burstSpread(constant AuroraUniforms& u) {
 /// edge about a pixel and a half wide, plus `softness` more.
 static float insideSphere(float r, constant AuroraUniforms& u, float softness = 0.0) {
     return 1.0 - smoothstep(1.0 - 1.5 / u.radius - softness, 1.0, r);
-}
-
-/// Overall light level, with the paste flash and the processing sweep.
-static float brightness(constant AuroraUniforms& u, float x) {
-    float energy = u.energy;
-    float b = (0.45 + 2.0 * energy + 0.7 * u.accent + 1.2 * u.flash) * (0.85 + 0.3 * u.processing);
-    return b * (1.0 + 0.7 * u.processing * exp(-pow((x - u.scan * 0.8) / 0.3, 2.0)));
 }
 
 // MARK: - Smoke
@@ -117,39 +130,38 @@ struct Smoke {
     float speed;        // turns on the motion clock
     float scale;        // size of its clouds; larger is finer
     float3 offset;      // its own place in the noise
-    float3 dim;         // colour of its thin parts
-    float3 bright;      // colour of its thick parts
+    float3 dim;         // colour of its thin parts, from the palette
+    float3 bright;      // colour of its thick parts, from the palette
     float strength;
 };
 
-static Smoke smokeAt(int index) {
+static Smoke smokeAt(int index, constant AuroraColors& colors, constant AuroraUniforms& u) {
     Smoke s;
+    s.dim = paletteColor(colors.listening.dim[index], colors.thinking.dim[index], u);
+    s.bright = paletteColor(colors.listening.bright[index], colors.thinking.bright[index], u);
     switch (index) {
     case 0:
-        // Orange, keeping low and to the front.
+        // Keeping low and to the front.
         s.axis = normalize(float3(0.3, 1.0, 0.4));
         s.home = normalize(float3(0.2, -0.7, 0.7));
         s.speed = 0.5; s.scale = 1.3;
         s.offset = float3(0.0, 0.0, 0.0);
-        s.dim = float3(1.0, 0.45, 0.2); s.bright = float3(1.0, 0.8, 0.5);
         s.strength = 1.0;
         break;
     case 1:
-        // Violet, round the right side.
+        // Round the right side.
         s.axis = normalize(float3(-0.5, 0.8, -0.3));
         s.home = normalize(float3(0.8, 0.1, 0.3));
         s.speed = -0.4; s.scale = 1.2;
         s.offset = float3(7.3, 2.1, 4.8);
-        s.dim = float3(0.5, 0.15, 1.0); s.bright = float3(0.85, 0.55, 1.0);
         s.strength = 1.0;
         break;
     default:
-        // Blue, along the top.
+        // Along the top.
         s.axis = normalize(float3(0.8, 0.3, 0.5));
         s.home = normalize(float3(-0.5, 0.8, 0.2));
         s.speed = 0.35; s.scale = 1.5;
         s.offset = float3(3.9, 8.2, 1.4);
-        s.dim = float3(0.15, 0.4, 1.0); s.bright = float3(0.55, 0.8, 1.0);
         s.strength = 0.8;
         break;
     }
@@ -186,7 +198,9 @@ static float smokeDensity(float3 stirred, float t) {
 /// interior; the alpha channel stays untouched. When the bubble bursts the
 /// smoke, no longer held in, tears into tongues flying off at their own
 /// pace, frays in the air and dissolves from the holes outward.
-fragment float4 auroraSmokeFragment(FullscreenVertex in [[stage_in]], constant AuroraUniforms& u [[buffer(0)]]) {
+fragment float4 auroraSmokeFragment(FullscreenVertex in [[stage_in]],
+                                    constant AuroraUniforms& u [[buffer(0)]],
+                                    constant AuroraColors& colors [[buffer(1)]]) {
     float spread = burstSpread(u);
     float2 p = sphereCoordinates(in.position.xy, u);
     if (u.burst > 0) {
@@ -222,19 +236,24 @@ fragment float4 auroraSmokeFragment(FullscreenVertex in [[stage_in]], constant A
         }
     }
 
-    float light = brightness(u, p.x);
-    float energy = u.energy;
+    // Overall light level, with the paste flash.
+    float light = 0.38 + 1.7 * u.light + 0.6 * u.accent + 1.0 * u.flash;
+    float energy = u.light;
     // A point inside the sphere behind this pixel; the glass bends the view
     // a little towards the rim.
     float z = sqrt(max(0.0, 1.0 - r * r));
     float3 q = float3(p * (1.0 + 0.12 * r * r), z * 0.6);
+    // Thinking, the smoke turns as one whirl about the middle, wound a
+    // little tighter towards it.
+    float whirl = u.swirl + 1.2 * u.processing * (1.0 - r);
+    q.xy = float2(q.x * cos(whirl) - q.y * sin(whirl), q.x * sin(whirl) + q.y * cos(whirl));
     // Thinner towards the rim, where there is less sphere to look through.
     float depth = 0.35 + 0.65 * z;
     float3 toLight = normalize(float3(-0.6, 0.7, 0.4));
 
     float3 color = float3(0);
     for (int i = 0; i < 3; i++) {
-        Smoke s = smokeAt(i);
+        Smoke s = smokeAt(i, colors, u);
         // Each smoke keeps to its side of the glass while it turns.
         float home = smoothstep(0.0, 0.9, dot(q, s.home));
         if (home <= 0) {
@@ -269,18 +288,22 @@ fragment float4 auroraSmokeFragment(FullscreenVertex in [[stage_in]], constant A
 
 /// The dark interior, the glass shell and the glow around it. Added under
 /// the smoke; the alpha channel carries the coverage of the sphere.
-fragment float4 auroraGlassFragment(FullscreenVertex in [[stage_in]], constant AuroraUniforms& u [[buffer(0)]]) {
+fragment float4 auroraGlassFragment(FullscreenVertex in [[stage_in]],
+                                    constant AuroraUniforms& u [[buffer(0)]],
+                                    constant AuroraColors& colors [[buffer(1)]]) {
     float2 p = sphereCoordinates(in.position.xy, u);
     float r = length(p);
     float pixel = 1.0 / u.radius;
-    float energy = u.energy;
+    float energy = u.light;
     float inside = insideSphere(r, u);
 
-    // Blue and white along the top, violet and magenta round the sides and
+    // One colour of the palette along the top, another round the sides and
     // bottom; the light comes from the upper left.
     float angle = atan2(p.y, p.x);
     float topness = 0.5 + 0.5 * sin(angle);
-    float3 rimColor = mix(float3(0.7, 0.3, 1.0), float3(0.55, 0.78, 1.0), smoothstep(0.1, 0.9, topness));
+    float3 rimSide = paletteColor(colors.listening.rimSide, colors.thinking.rimSide, u);
+    float3 rimTop = paletteColor(colors.listening.rimTop, colors.thinking.rimTop, u);
+    float3 rimColor = mix(rimSide, rimTop, smoothstep(0.1, 0.9, topness));
     float litSide = 0.55 + 0.45 * smoothstep(-1.0, 1.0, p.y - 0.4 * p.x);
     float highlight = 1.0 + 2.0 * exp(-pow((angle - 2.0) / 0.9, 2.0));
 
@@ -288,8 +311,9 @@ fragment float4 auroraGlassFragment(FullscreenVertex in [[stage_in]], constant A
     float alpha = 0;
 
     if (inside > 0) {
-        // Dark, slightly violet interior, a touch lighter towards the rim.
-        color = mix(float3(0.006, 0.008, 0.03), float3(0.03, 0.03, 0.1), r * r);
+        // Dark interior, a touch lighter and tinted by the rim's colour
+        // towards the rim.
+        color = mix(float3(0.006, 0.008, 0.03), mix(float3(0.03, 0.03, 0.1), 0.1 * rimSide, 0.6), r * r);
 
         // The shell: a soft band of light at the rim, a sharp hairline on
         // it, a faint second ring inside it from the refraction, and a
@@ -300,7 +324,7 @@ fragment float4 auroraGlassFragment(FullscreenVertex in [[stage_in]], constant A
         float fresnel = pow(r, 6.0) * 0.2 * litSide;
         float2 spot = (p - float2(-0.4, 0.6)) / float2(0.36, 0.14);
         float reflection = exp(-dot(spot, spot)) * 0.25;
-        float3 shell = rimColor * (band + hairline + innerRing + fresnel) + float3(0.75, 0.85, 1.0) * reflection;
+        float3 shell = rimColor * (band + hairline + innerRing + fresnel) + mix(float3(1.0), rimTop, 0.35) * reflection;
         color += shell * (0.8 + 1.2 * energy + 0.5 * u.accent + 0.8 * u.flash);
         color *= inside;
         alpha = 0.94 * inside;

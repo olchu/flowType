@@ -13,10 +13,7 @@ struct IndicatorSettingsPane: View {
     var body: some View {
         Form {
             Section {
-                IndicatorPreview(
-                    style: appState.settings.indicatorStyle,
-                    waveColor: appState.settings.waveColor
-                )
+                IndicatorPreview(appearance: appState.settings.indicatorAppearance)
             }
 
             Section("Appearance") {
@@ -26,6 +23,16 @@ struct IndicatorSettingsPane: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                if appState.settings.indicatorStyle.usesAuroraPalette {
+                    LabeledContent("Palette") {
+                        HStack(spacing: 4) {
+                            ForEach(AuroraPalette.allCases) { palette in
+                                auroraPaletteSwatch(palette)
+                            }
+                        }
+                    }
+                }
 
                 if appState.settings.indicatorStyle.usesWaveColor {
                     LabeledContent("Color") {
@@ -89,19 +96,31 @@ struct IndicatorSettingsPane: View {
 
     private func waveColorSwatch(_ color: WaveColor) -> some View {
         let palette = color.palette
-        let isSelected = appState.settings.waveColor == color
-
-        return Button {
+        return swatch(
+            colors: [Color(cgColor: palette.primary), Color(cgColor: palette.secondary)],
+            name: color.rawValue,
+            isSelected: appState.settings.waveColor == color
+        ) {
             appState.settings.waveColor = color
-        } label: {
+        }
+    }
+
+    private func auroraPaletteSwatch(_ palette: AuroraPalette) -> some View {
+        swatch(
+            colors: palette.swatchColors,
+            name: palette.rawValue,
+            isSelected: appState.settings.auroraPalette == palette
+        ) {
+            appState.settings.auroraPalette = palette
+        }
+    }
+
+    private func swatch(
+        colors: [Color], name: String, isSelected: Bool, select: @escaping () -> Void
+    ) -> some View {
+        Button(action: select) {
             Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [Color(cgColor: palette.primary), Color(cgColor: palette.secondary)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(width: 20, height: 20)
                 .padding(3)
                 .overlay {
@@ -110,8 +129,8 @@ struct IndicatorSettingsPane: View {
                 }
         }
         .buttonStyle(.plain)
-        .help(color.rawValue)
-        .accessibilityLabel(color.rawValue)
+        .help(name)
+        .accessibilityLabel(name)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
@@ -119,8 +138,7 @@ struct IndicatorSettingsPane: View {
 /// The real floating indicator on a desktop-like backdrop, fed with a
 /// speech-like level so the selected style and colour can be seen moving.
 private struct IndicatorPreview: View {
-    let style: IndicatorStyle
-    let waveColor: WaveColor
+    let appearance: IndicatorAppearance
 
     @StateObject private var model = FloatingIndicatorModel(content: .status(.recording), audioLevel: 0.4)
 
@@ -139,7 +157,7 @@ private struct IndicatorPreview: View {
                 )
 
             FloatingIndicatorView(model: model)
-                .scaleEffect(style == .bars ? 2 : 1)
+                .scaleEffect(appearance.style == .bars ? 2 : 1)
 
             Text("Preview")
                 .font(.caption2.weight(.semibold))
@@ -149,15 +167,13 @@ private struct IndicatorPreview: View {
         }
         .frame(height: 150)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Preview of the \(style.rawValue) indicator")
+        .accessibilityLabel("Preview of the \(appearance.style.rawValue) indicator")
         .onAppear {
             show(startsNewPresentation: true)
         }
-        .onChange(of: style) {
-            show(startsNewPresentation: true)
-        }
-        .onChange(of: waveColor) {
-            show(startsNewPresentation: false)
+        .onChange(of: appearance) { old, new in
+            // A new style plays its intro; a new colour just recolours it.
+            show(startsNewPresentation: new.style != old.style)
         }
         .task {
             // Rising and falling level, like a few spoken words.
@@ -172,11 +188,6 @@ private struct IndicatorPreview: View {
     }
 
     private func show(startsNewPresentation: Bool) {
-        model.show(
-            .status(.recording),
-            style: style,
-            waveColor: waveColor,
-            startsNewPresentation: startsNewPresentation
-        )
+        model.show(.status(.recording), appearance: appearance, startsNewPresentation: startsNewPresentation)
     }
 }

@@ -70,6 +70,25 @@ enum IndicatorStyle: String, Codable, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+/// Colours of the aurora indicator's smoke and glass; the colours live in
+/// AuroraIndicatorView.
+enum AuroraPalette: String, Codable, CaseIterable, Identifiable {
+    case nebula = "Nebula"
+    case ocean = "Ocean"
+    case ember = "Ember"
+    case borealis = "Borealis"
+
+    var id: Self { self }
+}
+
+/// What the floating indicator looks like: its style, and the colours of
+/// the styles that have them.
+struct IndicatorAppearance: Equatable {
+    var style: IndicatorStyle = .bars
+    var waveColor: WaveColor = .blue
+    var auroraPalette: AuroraPalette = .nebula
+}
+
 /// Colour theme of the waves indicator; palettes live in WaveIndicatorView.
 enum WaveColor: String, Codable, CaseIterable, Identifiable {
     case blue = "Blue"
@@ -92,11 +111,16 @@ struct AppSettings: Codable, Equatable {
     var microphoneSensitivity = 0.5
     var indicatorStyle: IndicatorStyle = .bars
     var waveColor: WaveColor = .blue
+    var auroraPalette: AuroraPalette = .nebula
     var playsSounds = true
     /// Scales every feedback cue; 0.5 is the recommended level.
     var soundVolume = 0.5
 
     init() {}
+
+    var indicatorAppearance: IndicatorAppearance {
+        IndicatorAppearance(style: indicatorStyle, waveColor: waveColor, auroraPalette: auroraPalette)
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -111,6 +135,7 @@ struct AppSettings: Codable, Equatable {
         microphoneSensitivity = try container.decodeIfPresent(Double.self, forKey: .microphoneSensitivity) ?? defaults.microphoneSensitivity
         indicatorStyle = (try? container.decodeIfPresent(IndicatorStyle.self, forKey: .indicatorStyle)) ?? defaults.indicatorStyle
         waveColor = (try? container.decodeIfPresent(WaveColor.self, forKey: .waveColor)) ?? defaults.waveColor
+        auroraPalette = (try? container.decodeIfPresent(AuroraPalette.self, forKey: .auroraPalette)) ?? defaults.auroraPalette
         playsSounds = try container.decodeIfPresent(Bool.self, forKey: .playsSounds) ?? defaults.playsSounds
         soundVolume = try container.decodeIfPresent(Double.self, forKey: .soundVolume) ?? defaults.soundVolume
     }

@@ -8,11 +8,11 @@ final class AuroraRenderer {
         var size: SIMD2<Float>
         var radius: Float
         var phase: Float
-        var energy: Float
+        var light: Float
         var accent: Float
         var flash: Float
         var processing: Float
-        var scan: Float
+        var swirl: Float
         var squash: Float
         var burst: Float
         var burstSeed: Float
@@ -72,7 +72,8 @@ final class AuroraRenderer {
 
     /// Renders one frame into `drawable`, which must be in `pixelFormat` and
     /// of the size in `uniforms`, and presents it.
-    func render(_ uniforms: Uniforms, to drawable: CAMetalDrawable) {
+    func render(_ uniforms: Uniforms, colors: AuroraColors, to drawable: CAMetalDrawable) {
+        var colors = colors
         let target = drawable.texture
         guard let light = lightTexture(width: target.width, height: target.height),
               let commands = queue.makeCommandBuffer()
@@ -88,8 +89,12 @@ final class AuroraRenderer {
         lightPass.colorAttachments[0].storeAction = .store
         if let encoder = commands.makeRenderCommandEncoder(descriptor: lightPass) {
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
-            encoder.setRenderPipelineState(glassPipeline)
-            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            encoder.setFragmentBytes(&colors, length: MemoryLayout<AuroraColors>.stride, index: 1)
+            // No glass while the smoke gathers or bursts.
+            if uniforms.glass > 0 {
+                encoder.setRenderPipelineState(glassPipeline)
+                encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            }
             // Once the burst is over there is no smoke to draw.
             if uniforms.burst < 1 {
                 encoder.setRenderPipelineState(smokePipeline)
