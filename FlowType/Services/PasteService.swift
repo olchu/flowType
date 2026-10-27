@@ -55,6 +55,7 @@ final class PasteService {
         }
 
         await activate(targetApplication)
+        await waitForModifierRelease()
 
         // A previous paste may still hold the clipboard. Its restore has to
         // run first, or the snapshot below would capture that transcript
@@ -203,6 +204,17 @@ final class PasteService {
 
         application.activate(options: [.activateIgnoringOtherApps])
         try? await Task.sleep(for: .milliseconds(150))
+    }
+
+    /// A ⌘V sent while ⌃, ⌥ or ⇧ is still held, as it is right after ⌃⌥V,
+    /// would merge into another shortcut in some apps. Waits up to a second
+    /// for them to be let go.
+    private func waitForModifierRelease() async {
+        let deadline = ContinuousClock.now + .seconds(1)
+        while !CGEventSource.flagsState(.combinedSessionState).isDisjoint(with: [.maskControl, .maskAlternate, .maskShift]),
+              ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     private func isParallelsApplication(_ application: NSRunningApplication?) -> Bool {

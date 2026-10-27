@@ -30,6 +30,8 @@ final class AppState: ObservableObject {
     }
     @Published var lastErrorMessage: String?
     @Published private(set) var isHotkeyRunning = false
+    /// False when another app already holds ⌃⌥V.
+    @Published private(set) var isPasteLastHotKeyAvailable = false
     @Published private(set) var hotkeyStatusMessage = "Waiting for Accessibility permission."
     @Published private(set) var hasAccessibilityPermission = false
     @Published private(set) var microphonePermission: PermissionStatus = .unknown
@@ -64,6 +66,12 @@ final class AppState: ObservableObject {
     private let finalTailSilenceMargin: TimeInterval = 0.5
     private lazy var onboardingWindowController = OnboardingWindowController(appState: self)
     private var dictationTargetApplication: NSRunningApplication?
+    /// The last transcript, kept in memory only, so ⌃⌥V can paste it again
+    /// when the original paste went nowhere.
+    private var lastTranscript: String?
+    /// While a ⌃⌥V paste waits for the keys to be let go and pastes, so a
+    /// second press doesn't start another one on top of it.
+    private var isPastingLastTranscript = false
     private var resourceUsageTask: Task<Void, Never>?
     private var streamingTranscriptionTask: Task<Void, Never>?
     /// Processing of the last dictation, or the stream shutdown of a cancelled
@@ -164,7 +172,8 @@ final class AppState: ObservableObject {
     }
 
     func startDictation() {
-        guard canStartRecording else { return }
+        // Not while ⌃⌥V is pasting: its ⌘V would land in the dictation.
+        guard canStartRecording, !isPastingLastTranscript else { return }
 
         lastErrorMessage = nil
         audioLevel = 0
@@ -181,6 +190,8 @@ final class AppState: ObservableObject {
         }
 
         dictationTargetApplication = NSWorkspace.shared.frontmostApplication
+        // An earlier delivery may still be finishing if something else moved
+        // the status on meanwhile.
         isDeliveringTranscript = false
         status = .recording
         playFeedback(.recordingStarted)
@@ -288,12 +299,17 @@ final class AppState: ObservableObject {
 
             if isCancelled() { return }
             isDeliveringTranscript = true
+            // Cleared on the way out, after the status has left .transcribing,
+            // so Escape isn't intercepted again in between.
+            defer { isDeliveringTranscript = false }
 
             guard !transcript.isEmpty else {
                 status = .ready
                 timing.finish("empty transcript")
                 return
             }
+
+            lastTranscript = transcript
 
             if settings.autoPaste {
                 do {
@@ -669,14 +685,53 @@ final class AppState: ObservableObject {
             self?.cancelDictation()
         }
 
+        hotkeyService.onPasteLast = { [weak self] in
+            self?.pasteLastTranscript()
+        }
+
         do {
             try hotkeyService.start()
             isHotkeyRunning = true
+            isPasteLastHotKeyAvailable = hotkeyService.isPasteLastHotKeyRegistered
             hotkeyStatusMessage = "Running"
         } catch {
             isHotkeyRunning = false
             hotkeyStatusMessage = error.localizedDescription
             showError(error)
+        }
+    }
+
+    /// Pastes the last transcript into the focused field again. It pastes
+    /// even with automatic paste off: pressing ⌃⌥V asks for exactly that.
+    private func pasteLastTranscript() {
+        guard status != .recording, status != .transcribing, !isPastingLastTranscript else {
+            return
+        }
+        guard let transcript = lastTranscript else {
+            if settings.playsSounds {
+                NSSound.beep()
+            }
+            return
+        }
+
+        isPastingLastTranscript = true
+        Task {
+            defer { isPastingLastTranscript = false }
+            do {
+                try await pasteService.pasteText(
+                    transcript,
+                    restoreClipboard: settings.restoreClipboard,
+                    into: NSWorkspace.shared.frontmostApplication
+                )
+            } catch {
+                showError(error)
+                return
+            }
+            playFeedback(.pasted)
+            // The paste that failed has been made good.
+            if status == .error {
+                clearError()
+            }
         }
     }
 

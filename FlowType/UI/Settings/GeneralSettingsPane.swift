@@ -32,6 +32,15 @@ struct GeneralSettingsPane: View {
                     KeyCap(label: "fn")
                 }
 
+                LabeledContent("Paste last dictation") {
+                    if appState.isHotkeyRunning && !appState.isPasteLastHotKeyAvailable {
+                        Text("⌃⌥V is taken by another app")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        KeyCap(label: "⌃⌥V")
+                    }
+                }
+
                 LabeledContent("Listener") {
                     StatusBadge(
                         appState.isHotkeyRunning ? "Running" : "Not running",
@@ -55,7 +64,7 @@ struct GeneralSettingsPane: View {
             } header: {
                 Text("Hotkey")
             } footer: {
-                Text("Hold Fn while you speak and release it to paste the text.")
+                Text("Hold Fn while you speak and release it to paste the text. If it went nowhere, put the cursor where it belongs and press ⌃⌥V to paste it again.")
             }
 
             Section("Paste") {

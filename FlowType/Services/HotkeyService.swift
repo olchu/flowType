@@ -33,6 +33,12 @@ final class HotkeyService {
     var onKeyDown: (() -> Void)?
     var onKeyUp: (() -> Void)?
     var onEscape: (() -> Void)?
+    /// ⌃⌥V, for pasting the last dictation again.
+    var onPasteLast: (() -> Void)?
+
+    var isPasteLastHotKeyRegistered: Bool {
+        pasteLastHotKey != nil
+    }
 
     /// While true, Escape is taken away from the frontmost app and reported
     /// through `onEscape`. Meant for the length of a dictation only: taking
@@ -55,6 +61,10 @@ final class HotkeyService {
     /// itself, and answering that by switching it off again would loop.
     private var isEscapeTapEnabled = false
     private var isPressed = false
+    /// A Carbon hotkey: it takes ⌃⌥V away from every app without an event
+    /// tap, so it costs nothing until pressed.
+    private var pasteLastHotKey: EventHotKeyRef?
+    private var hotKeyHandler: EventHandlerRef?
     /// From a swallowed Escape press until its release, so the auto-repeats
     /// and the release don't reach the app either.
     private var isSwallowingEscape = false
@@ -79,20 +89,55 @@ final class HotkeyService {
         fnTap.setEnabled(true)
         self.fnTap = fnTap
         updateEscapeTap()
+        registerPasteLastHotKey()
     }
 
     func stop() {
         fnTap?.remove()
         escapeTap?.remove()
+        pasteLastHotKey.map { _ = UnregisterEventHotKey($0) }
+        hotKeyHandler.map { _ = RemoveEventHandler($0) }
 
         fnTap = nil
         escapeTap = nil
+        pasteLastHotKey = nil
+        hotKeyHandler = nil
         isEscapeTapEnabled = false
         isPressed = false
         isSwallowingEscape = false
         onKeyDown = nil
         onKeyUp = nil
         onEscape = nil
+        onPasteLast = nil
+    }
+
+    /// Without it the rest of the hotkeys still work, so a failure here, for
+    /// example when another app holds ⌃⌥V, only leaves `pasteLastHotKey`
+    /// unset. It is the only Carbon hotkey, so every press the handler gets
+    /// is ⌃⌥V.
+    private func registerPasteLastHotKey() {
+        var pressed = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, _, userInfo in
+                if let service = HotkeyService.service(from: userInfo) {
+                    Task { @MainActor in
+                        service.onPasteLast?()
+                    }
+                }
+                return noErr
+            },
+            1, &pressed,
+            Unmanaged.passUnretained(self).toOpaque(),
+            &hotKeyHandler
+        )
+        let status = RegisterEventHotKey(
+            UInt32(kVK_ANSI_V), UInt32(controlKey | optionKey), EventHotKeyID(),
+            GetApplicationEventTarget(), 0, &pasteLastHotKey
+        )
+        if status != noErr {
+            pasteLastHotKey = nil
+        }
     }
 
     private func handleEvent(type: CGEventType, event: CGEvent) {

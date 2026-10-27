@@ -28,6 +28,8 @@ If you press `Fn` and say nothing, nothing is pasted: the speech detector drops 
 
 To cancel, press `Esc` while recording or while the text is being processed. Nothing is pasted, and the `Esc` doesn't reach the app you're typing in.
 
+If the text went nowhere, say because the cursor wasn't in a text field, put the cursor where it belongs and press `⌃⌥V`. FlowType keeps the last dictation in its own memory, never on disk, and pastes it again, whatever is on the clipboard by then.
+
 ## Features
 
 ### Speech recognition
