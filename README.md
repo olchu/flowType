@@ -64,6 +64,8 @@ The default mode, *Local rules*, is a set of fast built-in rules that remove rep
 
 *Write numbers as digits* works in Russian and English. Russian numbers turn into digits in any case: “двадцати пяти” becomes 25, “двадцать первый” becomes 21-й, “двадцать пять процентов” becomes 25%, “пять тысяч рублей” becomes 5000 ₽ and “в девять тридцать” becomes в 9:30. Dates and years are written as in edited text, “25 октября” and “в 2026 году”. In English, “twenty-five” becomes 25, “twenty-first” becomes 21st, “five dollars” becomes $5, “at nine thirty” becomes at 9:30 and “nineteen ninety” becomes 1990. Numbers under ten stay words unless you switch that off, so “у меня два кота” and “two cats” are left alone.
 
+*Write spoken punctuation* turns “точка”, “запятая”, “точка с запятой”, “двоеточие”, “многоточие”, “тире”, “вопросительный знак” or “знак вопроса”, “восклицательный знак”, “открыть кавычки”, “закрыть кавычки”, “открыть скобку”, “закрыть скобку”, “новая строка” and “новый абзац”, or “period”, “comma”, “semicolon”, “colon”, “ellipsis”, “dash”, “question mark”, “exclamation mark”, “open quote”, “close quote”, “open bracket”, “close bracket”, “new line” and “new paragraph”, into marks and line breaks. Commands that are also everyday words, like “точка”, “запятая” or “новая строка”, work only where a phrase ends: before a short pause, another command or the end of the dictation. So “Привет, запятая, как дела, вопросительный знак” becomes “Привет, как дела?” while “точка зрения” stays. Names that mean nothing but a mark, like “тире” or “открыть скобку”, work anywhere: “он сказал открыть кавычки привет закрыть кавычки” becomes “он сказал «привет»”.
+
 *Local LLM* applies the same rules and then runs a small language model on your Mac, built on [MLX](https://github.com/ml-explore/mlx-swift-lm), to fix punctuation and obvious recognition errors. If its edit adds or drops more than a stray word, FlowType throws it out and keeps the rule-based text.
 
 | Model | Size | Notes |
@@ -115,7 +117,7 @@ The menu shows the current status and model loading progress, and switches the i
 - Permissions: microphone and Accessibility. Changes you make in System Settings are picked up automatically.
 - Models: profile choice, model download and deletion, loading progress of the active model.
 - Transcription: language, streaming mode and text cleanup.
-- Text Rules: rules applied to the text after recognition, each with its own switch: filler words and numbers as digits.
+- Text Rules: rules applied to the text after recognition, each with its own switch: filler words, numbers as digits and spoken punctuation.
 - Indicator: style (Bars, Waves, Dots, Aurora or Particles), colour or palette, position and sensitivity, with a live preview. *Choose…* under Position shows the indicator so you can drag it anywhere on any screen; it appears there from then on.
 - Sounds: on/off, volume and cue previews.
 

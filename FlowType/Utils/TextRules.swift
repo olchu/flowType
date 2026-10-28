@@ -7,15 +7,23 @@ nonisolated struct TextRules: Sendable {
     var fillerWords: [String]
     var writesNumbersAsDigits: Bool
     var keepsSmallNumbersAsWords: Bool
+    var writesSpokenPunctuation: Bool
 
     func apply(to text: String) -> String {
-        var text = text
-        if removesFillerWords {
-            text = FillerWords.removing(fillerWords, from: text)
+        // First, while the recogniser's commas still mark the pauses that
+        // tell a command from a word: removing a filler takes one with it.
+        let text = writesSpokenPunctuation ? VoicePunctuation.applying(to: text) : text
+        // Line by line, as the rules below read a line a space at a time.
+        return text.split(separator: "\n", omittingEmptySubsequences: false).map { line in
+            var line = String(line)
+            if removesFillerWords {
+                line = FillerWords.removing(fillerWords, from: line)
+            }
+            if writesNumbersAsDigits {
+                line = SpokenNumbers.digits(in: line, keepsSmallNumbersAsWords: keepsSmallNumbersAsWords)
+            }
+            return line
         }
-        if writesNumbersAsDigits {
-            text = SpokenNumbers.digits(in: text, keepsSmallNumbersAsWords: keepsSmallNumbersAsWords)
-        }
-        return text
+        .joined(separator: "\n")
     }
 }

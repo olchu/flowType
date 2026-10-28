@@ -51,15 +51,13 @@ nonisolated enum FillerWords {
         }
 
         var endsSentence: Bool {
-            trailing.contains(where: FillerWords.sentenceEnds.contains)
+            trailing.contains(where: TranscriptText.sentenceEnds.contains)
         }
 
         var endsWithComma: Bool {
             trailing.hasSuffix(",")
         }
     }
-
-    private static let sentenceEnds: Set<Character> = [".", "!", "?", "…"]
 
     private static func firstRemovableRun(in tokens: [Token], from first: Int, phrases: [[String]]) -> Range<Int>? {
         for start in tokens.indices.dropFirst(first) {
@@ -95,7 +93,7 @@ nonisolated enum FillerWords {
         let isPhraseStart = previous.map { tokens[$0].endsSentence } ?? true
 
         if let previous, !isPhraseStart {
-            let terminal = removedPunctuation.filter(sentenceEnds.contains)
+            let terminal = removedPunctuation.filter(TranscriptText.sentenceEnds.contains)
             if !terminal.isEmpty {
                 // "знаю, короче." → "знаю."
                 tokens[previous] = Token(withoutTrailingComma(tokens[previous].text) + terminal)
@@ -113,7 +111,7 @@ nonisolated enum FillerWords {
 
         // "Ну, давай" → "Давай".
         if isPhraseStart && wasCapitalized && run.lowerBound < tokens.count {
-            tokens[run.lowerBound] = Token(capitalizingFirstLetter(tokens[run.lowerBound].text))
+            tokens[run.lowerBound] = Token(TranscriptText.capitalizingFirstLetter(tokens[run.lowerBound].text))
         }
     }
 
@@ -135,11 +133,5 @@ nonisolated enum FillerWords {
 
     private static func withoutTrailingComma(_ text: String) -> String {
         text.hasSuffix(",") ? String(text.dropLast()) : text
-    }
-
-    /// Leaves words with capitals of their own alone: "iPhone", "eBay".
-    private static func capitalizingFirstLetter(_ text: String) -> String {
-        guard let index = text.firstIndex(where: \.isLetter), !text.contains(where: \.isUppercase) else { return text }
-        return text.replacingCharacters(in: index...index, with: text[index].uppercased())
     }
 }

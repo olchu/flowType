@@ -110,6 +110,7 @@ struct AppSettings: Codable, Equatable {
     var fillerWords = FillerWords.defaults
     var writesNumbersAsDigits = true
     var keepsSmallNumbersAsWords = true
+    var writesSpokenPunctuation = true
     var autoPaste = true
     var restoreClipboard = true
     var microphoneSensitivity = 0.5
@@ -131,7 +132,8 @@ struct AppSettings: Codable, Equatable {
             removesFillerWords: removesFillerWords,
             fillerWords: fillerWords,
             writesNumbersAsDigits: writesNumbersAsDigits,
-            keepsSmallNumbersAsWords: keepsSmallNumbersAsWords
+            keepsSmallNumbersAsWords: keepsSmallNumbersAsWords,
+            writesSpokenPunctuation: writesSpokenPunctuation
         )
     }
 
@@ -151,6 +153,7 @@ struct AppSettings: Codable, Equatable {
         fillerWords = try container.decodeIfPresent([String].self, forKey: .fillerWords) ?? defaults.fillerWords
         writesNumbersAsDigits = try container.decodeIfPresent(Bool.self, forKey: .writesNumbersAsDigits) ?? defaults.writesNumbersAsDigits
         keepsSmallNumbersAsWords = try container.decodeIfPresent(Bool.self, forKey: .keepsSmallNumbersAsWords) ?? defaults.keepsSmallNumbersAsWords
+        writesSpokenPunctuation = try container.decodeIfPresent(Bool.self, forKey: .writesSpokenPunctuation) ?? defaults.writesSpokenPunctuation
         autoPaste = try container.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? defaults.autoPaste
         restoreClipboard = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? defaults.restoreClipboard
         microphoneSensitivity = try container.decodeIfPresent(Double.self, forKey: .microphoneSensitivity) ?? defaults.microphoneSensitivity

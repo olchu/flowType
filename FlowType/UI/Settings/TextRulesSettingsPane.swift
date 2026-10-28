@@ -45,6 +45,14 @@ struct TextRulesSettingsPane: View {
                     )
                 }
             }
+
+            SettingsSection("Punctuation", footer: "Say \u{201C}точка\u{201D}, \u{201C}запятая\u{201D}, \u{201C}точка с запятой\u{201D}, \u{201C}двоеточие\u{201D}, \u{201C}многоточие\u{201D}, \u{201C}тире\u{201D}, \u{201C}вопросительный знак\u{201D} or \u{201C}знак вопроса\u{201D}, \u{201C}восклицательный знак\u{201D}, \u{201C}открыть кавычки\u{201D}, \u{201C}закрыть кавычки\u{201D}, \u{201C}открыть скобку\u{201D}, \u{201C}закрыть скобку\u{201D}, \u{201C}новая строка\u{201D}, \u{201C}новый абзац\u{201D}, or \u{201C}period\u{201D}, \u{201C}comma\u{201D}, \u{201C}semicolon\u{201D}, \u{201C}colon\u{201D}, \u{201C}ellipsis\u{201D}, \u{201C}dash\u{201D}, \u{201C}question mark\u{201D}, \u{201C}exclamation mark\u{201D}, \u{201C}open quote\u{201D}, \u{201C}close quote\u{201D}, \u{201C}open bracket\u{201D}, \u{201C}close bracket\u{201D}, \u{201C}new line\u{201D}, \u{201C}new paragraph\u{201D}. Commands that are also everyday words, like \u{201C}точка\u{201D} or \u{201C}новая строка\u{201D}, work only before a short pause, so \u{201C}точка зрения\u{201D} stays.") {
+                SettingsToggle(
+                    "Write spoken punctuation",
+                    subtitle: "\u{201C}Привет, запятая, как дела, вопросительный знак\u{201D} becomes \u{201C}Привет, как дела?\u{201D}",
+                    isOn: $appState.settings.writesSpokenPunctuation
+                )
+            }
         }
         .onAppear {
             fillerWordsDraft = appState.settings.fillerWords.joined(separator: ", ")

@@ -176,6 +176,15 @@ enum TranscriptText {
         return "\(previous)\(punctuation)"
     }
 
+    /// Marks that end a sentence, for the text rules.
+    nonisolated static let sentenceEnds: Set<Character> = [".", "!", "?", "…"]
+
+    /// Leaves words with capitals of their own alone: "iPhone", "eBay".
+    nonisolated static func capitalizingFirstLetter(_ text: String) -> String {
+        guard let index = text.firstIndex(where: \.isLetter), !text.contains(where: \.isUppercase) else { return text }
+        return text.replacingCharacters(in: index...index, with: text[index].uppercased())
+    }
+
     nonisolated private static func isTerminalPunctuation(_ character: Character) -> Bool {
         character == "." || character == "!" || character == "?"
     }
