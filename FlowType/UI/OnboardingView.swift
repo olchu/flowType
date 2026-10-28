@@ -69,7 +69,7 @@ struct OnboardingView: View {
             } label: {
                 Label(downloadButtonTitle, systemImage: downloadButtonIcon)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.settingsProminent)
             .disabled(!appState.selectedModelStorageState.canDownload)
         }
     }

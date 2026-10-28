@@ -93,7 +93,7 @@ Dots is a field of glowing dots in columns, mirrored around a centre row like a 
 
 Aurora is a glass bubble with coloured smoke turning inside it: orange, violet and blue, each winding round its own axis and lit from the upper left. Your voice lights the smoke up, brighter, hotter and a little thicker the louder you speak, stirs it faster and swells the bubble, which pulses and wobbles like jelly while you talk. While the text is processed it thinks: it shrinks, breathes evenly and whirls in its palette's thinking colours. There are four palettes: Nebula, Ocean, Ember and Borealis. It appears out of smoke gathering into a small clot that swells into the bubble, and at the end the bubble bursts and the smoke tears apart and dissolves, differently every time. It's drawn by a small Metal renderer, which keeps its memory use to a few megabytes.
 
-Particles is a field of glowing dots seen in perspective, swelling slowly like a small landscape. Your voice raises its hills and lights it up: the higher a dot, the brighter and warmer it is, from blue in the hollows to violet and pink on the peaks. Like the waves, it gathers out of the middle and folds back into it. It's drawn with Metal too.
+Particles is a field of glowing dots seen in perspective, swelling slowly like a small landscape, with a mountain for each frequency band of your voice: the lows on the left, the highs on the right, so a vowel and an "s" raise different peaks. Its colour runs from violet and pink through blue and cyan to nearly white, the peaks turn pale, and fine dust drifts over it. Like the waves, it gathers out of the middle and folds back into it. It's drawn with Metal too, and the spectrum comes from an FFT of the microphone in Accelerate.
 
 Every style appears almost instantly and collapses right after the paste. Microphone sensitivity is adjustable, and at low values the indicator ignores background noise.
 
@@ -116,7 +116,7 @@ The menu shows the current status, model loading progress, and the CPU and memor
 - Models: profile choice, model download and deletion, loading progress of the active model.
 - Transcription: language, streaming mode and text cleanup.
 - Text Rules: rules applied to the text after recognition, each with its own switch: filler words and numbers as digits.
-- Indicator: style (Bars, Waves, Dots, Aurora or Particles), colour or palette and sensitivity, with a live preview.
+- Indicator: style (Bars, Waves, Dots, Aurora or Particles), colour or palette, position and sensitivity, with a live preview. *Choose…* under Position shows the indicator so you can drag it anywhere on any screen; it appears there from then on.
 - Sounds: on/off, volume and cue previews.
 
 On first launch, an onboarding window offers to download the selected model.

@@ -6,33 +6,13 @@ struct GeneralSettingsPane: View {
     @State private var isConfirmingReset = false
 
     var body: some View {
-        Form {
-            Section {
-                HStack(spacing: 14) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 56, height: 56)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Flow Type")
-                            .font(.title2.weight(.semibold))
-
-                        Text("Local voice dictation · Version \(appVersion)")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-                }
-                .padding(.vertical, 4)
-            }
-
-            Section {
-                LabeledContent("Hold to dictate") {
+        SettingsPage(.general) {
+            SettingsSection("Hotkey", footer: "Hold Fn while you speak and release it to paste the text. If it went nowhere, put the cursor where it belongs and press ⌃⌥V to paste it again.") {
+                SettingsRow("Hold to dictate") {
                     KeyCap(label: "fn")
                 }
 
-                LabeledContent("Paste last dictation") {
+                SettingsRow("Paste last dictation") {
                     if appState.isHotkeyRunning && !appState.isPasteLastHotKeyAvailable {
                         Text("⌃⌥V is taken by another app")
                             .foregroundStyle(.secondary)
@@ -41,7 +21,7 @@ struct GeneralSettingsPane: View {
                     }
                 }
 
-                LabeledContent("Listener") {
+                SettingsRow("Listener") {
                     StatusBadge(
                         appState.isHotkeyRunning ? "Running" : "Not running",
                         tone: appState.isHotkeyRunning ? .positive : .negative
@@ -49,63 +29,46 @@ struct GeneralSettingsPane: View {
                 }
 
                 if !appState.isHotkeyRunning {
-                    HStack {
-                        Text(appState.hotkeyStatusMessage)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-
-                        Spacer()
-
+                    SettingsRow(appState.hotkeyStatusMessage) {
                         Button("Restart Listener") {
                             appState.restartHotkey()
                         }
                     }
                 }
-            } header: {
-                Text("Hotkey")
-            } footer: {
-                Text("Hold Fn while you speak and release it to paste the text. If it went nowhere, put the cursor where it belongs and press ⌃⌥V to paste it again.")
             }
 
-            Section("Paste") {
-                Toggle(isOn: $appState.settings.autoPaste) {
-                    Text("Paste automatically")
-                    Text("Insert the text into the focused field. When off, it is only copied.")
-                }
+            SettingsSection("Paste") {
+                SettingsToggle(
+                    "Paste automatically",
+                    subtitle: "Insert the text into the focused field. When off, it is only copied.",
+                    isOn: $appState.settings.autoPaste
+                )
 
-                Toggle(isOn: $appState.settings.restoreClipboard) {
-                    Text("Restore clipboard")
-                    Text("Put back what was on the clipboard before the paste.")
-                }
+                SettingsToggle(
+                    "Restore clipboard",
+                    subtitle: "Put back what was on the clipboard before the paste.",
+                    isOn: $appState.settings.restoreClipboard
+                )
                 .disabled(!appState.settings.autoPaste)
             }
 
-            Section("Startup") {
-                Toggle(
+            SettingsSection("Startup") {
+                SettingsToggle(
+                    "Open at login",
+                    subtitle: appState.launchAtLoginStatusMessage,
                     isOn: Binding(
                         get: { appState.isLaunchAtLoginEnabled },
                         set: { appState.setLaunchAtLoginEnabled($0) }
                     )
-                ) {
-                    Text("Open at login")
-                    Text(appState.launchAtLoginStatusMessage)
-                }
+                )
             }
 
-            Section {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Reset settings")
-                        Text("Downloaded models and permissions are kept.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
+            SettingsSection("Reset", footer: "Flow Type \(appVersion) · Local voice dictation") {
+                SettingsRow("Reset settings", subtitle: "Downloaded models and permissions are kept.") {
                     Button("Reset…", role: .destructive) {
                         isConfirmingReset = true
                     }
+                    .buttonStyle(.settingsProminent)
                 }
             }
         }
@@ -117,7 +80,7 @@ struct GeneralSettingsPane: View {
                 appState.resetSettingsToDefaults()
             }
         } message: {
-            Text("Profile, language, cleanup, paste, indicator and sound settings go back to their defaults.")
+            Text("Profile, language, cleanup, text rules, paste, indicator and sound settings go back to their defaults.")
         }
     }
 

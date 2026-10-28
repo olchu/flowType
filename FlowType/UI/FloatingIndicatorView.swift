@@ -14,10 +14,16 @@ final class FloatingIndicatorModel: ObservableObject {
     @Published private(set) var presentationID = 0
     /// Cleared by `show`, so a dismissal can be taken back while it runs.
     @Published private(set) var isDismissing = false
+    /// While the user drags the indicator to choose where it appears; a
+    /// dashed outline shows it can be moved.
+    @Published var isPositioning = false
     /// Level after the microphone sensitivity gate; 0 means silence. Not
     /// published: it changes at buffer rate and the animations read it on
     /// every frame anyway.
     var audioLevel: Double
+    /// The spectrum's shape, each band 0...1 against the strongest; the
+    /// indicator scales it by the level. See SpectrumAnalyzer.
+    var audioBands = SpectrumBands.zero
 
     init(
         content: Content = .status(.ready),
@@ -81,6 +87,14 @@ struct FloatingIndicatorView: View {
             }
         }
         .frame(width: size.width, height: size.height)
+        .overlay {
+            if model.isPositioning {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .shadow(color: .black.opacity(0.5), radius: 2)
+            }
+        }
         .onAppear(perform: runIntroAnimation)
         .onChange(of: model.presentationID) {
             runIntroAnimation()

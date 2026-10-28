@@ -1,20 +1,14 @@
 import SwiftUI
 
-/// Rounded, tinted symbol in the style of System Settings.
+/// A monochrome symbol on a soft tile, beside a row's title.
 struct SettingsIcon: View {
     let systemName: String
-    let tint: Color
-    var size: CGFloat = 22
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: size * 0.55, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(
-                RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
-                    .fill(tint.gradient)
-            )
+            .font(.system(size: 14.5, weight: .medium))
+            .frame(width: 30, height: 30)
+            .background(SettingsStyle.fill, in: .rect(cornerRadius: 8.5, style: .continuous))
             .accessibilityHidden(true)
     }
 }
@@ -25,8 +19,6 @@ struct StatusBadge: View {
         case positive
         case warning
         case negative
-        case neutral
-        case accent
 
         var color: Color {
             switch self {
@@ -36,10 +28,6 @@ struct StatusBadge: View {
                 .orange
             case .negative:
                 .red
-            case .neutral:
-                .secondary
-            case .accent:
-                .accentColor
             }
         }
     }
@@ -53,19 +41,19 @@ struct StatusBadge: View {
     }
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Circle()
                 .fill(tone.color)
-                .frame(width: 6, height: 6)
+                .frame(width: 7, height: 7)
 
             Text(text)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(tone == .neutral ? Color.secondary : tone.color)
+                .font(.callout)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(tone.color.opacity(0.12), in: .capsule)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(SettingsStyle.fill, in: .capsule)
     }
 }
 
@@ -76,17 +64,10 @@ struct KeyCap: View {
     var body: some View {
         Text(label)
             .font(.system(.callout, design: .rounded).weight(.medium))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-                    .shadow(color: .black.opacity(0.18), radius: 0, y: 1)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(.separator)
-            )
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(SettingsStyle.fill, in: .rect(cornerRadius: 8, style: .continuous))
     }
 }
 

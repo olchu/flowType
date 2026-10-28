@@ -3,10 +3,11 @@ import Metal
 import SwiftUI
 
 /// Particles style of the floating indicator: a field of glowing dots seen
-/// in perspective, swelling slowly like a landscape. The voice raises its
-/// hills and lights it up; the higher a dot, the brighter and warmer it is,
-/// from blue in the hollows to violet and pink on the peaks. Like the waves,
-/// it gathers out of the middle and folds back into it.
+/// in perspective, swelling slowly like a landscape, with a mountain for
+/// each frequency band of the voice, the lows on the left and the highs on
+/// the right. Its colour runs from violet and pink through blue and cyan to
+/// nearly white, the peaks turn pale, and dust drifts over it. Like the
+/// waves, it gathers out of the middle and folds back into it.
 ///
 /// Drawn by ParticleFieldRenderer with Metal: thousands of glowing dots
 /// can't be had cheaply from shape layers.
@@ -95,7 +96,7 @@ final class ParticleFieldLayerView: MetalIndicatorLayerView {
             processing: Float(frame.scanAmount),
             scan: Float(frame.scan)
         )
-        renderer.render(uniforms, to: drawable)
+        renderer.render(uniforms, bands: frame.bands, to: drawable)
     }
 }
 

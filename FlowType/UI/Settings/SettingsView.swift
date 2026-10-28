@@ -31,48 +31,49 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Shown filled when the pane is selected.
     var systemImage: String {
         switch self {
         case .general:
-            "gearshape.fill"
+            "gearshape"
         case .permissions:
-            "hand.raised.fill"
+            "hand.raised"
         case .models:
-            "cpu.fill"
+            "cpu"
         case .transcription:
-            "text.bubble.fill"
+            "bubble.left"
         case .textRules:
-            "text.badge.checkmark"
+            "list.bullet"
         case .indicator:
             "waveform"
         case .sounds:
-            "speaker.wave.2.fill"
+            "speaker.wave.2"
         }
     }
 
-    var tint: Color {
+    var subtitle: String {
         switch self {
         case .general:
-            .gray
+            "Configure how Flow Type works on your Mac."
         case .permissions:
-            .blue
+            "What Flow Type needs to hear you and type for you."
         case .models:
-            .purple
+            "Speech recognition that runs on this Mac."
         case .transcription:
-            .orange
+            "How your speech becomes text."
         case .textRules:
-            .green
+            "Rules applied to the text after recognition."
         case .indicator:
-            .teal
+            "How the indicator above the Dock looks and reacts."
         case .sounds:
-            .pink
+            "Cues for each step of a dictation."
         }
     }
 }
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var selection: SettingsPane? = .general
+    @State private var selection = LaunchArguments.settingsPane ?? .general
 
     var body: some View {
         NavigationSplitView {
@@ -83,6 +84,7 @@ struct SettingsView: View {
             detail
         }
         .frame(minWidth: 760, idealWidth: 820, minHeight: 540, idealHeight: 620)
+        .settingsTheme()
         .onAppear {
             appState.refreshPermissions()
             appState.refreshLaunchAtLoginStatus()
@@ -95,30 +97,67 @@ struct SettingsView: View {
     }
 
     private var sidebar: some View {
-        List(selection: $selection) {
-            ForEach(SettingsPane.allCases) { pane in
-                sidebarRow(for: pane)
-                    .tag(pane)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 3) {
+                SidebarHeader()
+
+                ForEach(SettingsPane.allCases) { pane in
+                    sidebarRow(for: pane)
+                }
             }
+            .padding(.horizontal, 10)
+            // The arrow keys move through the panes, as in a sidebar list;
+            // the selected row shows where focus is.
+            .focusable()
+            .focusEffectDisabled()
+            .onMoveCommand { direction in
+                let panes = SettingsPane.allCases
+                guard let index = panes.firstIndex(of: selection) else { return }
+                switch direction {
+                case .up: selection = panes[max(index - 1, 0)]
+                case .down: selection = panes[min(index + 1, panes.count - 1)]
+                default: break
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Settings")
         }
-        .safeAreaInset(edge: .top) {
-            SidebarHeader()
+        .safeAreaInset(edge: .bottom, alignment: .leading) {
+            // The author's mark, dark in light and inverted in dark.
+            Image("OlchuLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(height: 18)
+                .foregroundStyle(.primary.opacity(0.85))
+                .padding(.leading, 22)
+                .padding(.bottom, 18)
+                .accessibilityLabel("olchu")
         }
     }
 
     private func sidebarRow(for pane: SettingsPane) -> some View {
-        Label {
-            HStack {
+        let isSelected = selection == pane
+
+        return Button {
+            selection = pane
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: pane.systemImage)
+                    .symbolVariant(isSelected ? .fill : .none)
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 22)
+
                 Text(pane.title)
 
-                Spacer()
+                Spacer(minLength: 0)
 
                 sidebarAccessory(for: pane)
             }
-        } icon: {
-            SettingsIcon(systemName: pane.systemImage, tint: pane.tint)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .settingsSelection(isSelected, cornerRadius: 11)
         }
-        .padding(.vertical, 2)
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -138,10 +177,8 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var detail: some View {
-        let pane = selection ?? .general
-
         Group {
-            switch pane {
+            switch selection {
             case .general:
                 GeneralSettingsPane()
             case .permissions:
@@ -158,8 +195,6 @@ struct SettingsView: View {
                 SoundsSettingsPane()
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle(pane.title)
         .safeAreaInset(edge: .top, spacing: 0) {
             if let message = appState.lastErrorMessage {
                 ErrorBanner(message: message) {
@@ -197,9 +232,9 @@ private struct SidebarHeader: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 6)
         .padding(.top, 4)
-        .padding(.bottom, 10)
+        .padding(.bottom, 16)
     }
 
     private var statusColor: Color {

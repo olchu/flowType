@@ -44,26 +44,44 @@ static float voiceEnergy(float level) {
     return 1.0 - exp(-6.0 * level);
 }
 
-/// A loop of colours the field shimmers through: cyan, blue, violet,
-/// magenta and a warm pink, then back to cyan. `t` is in turns.
-static float3 shimmer(float t) {
+/// Must match SpectrumAnalyzer.bandCount.
+constant int bandCount = 8;
+
+/// Colour across the field, `t` from 0 at its left end to 1 at the right:
+/// violet and pink, blue, cyan, then nearly white.
+static float3 fieldColor(float t) {
     const float3 colors[5] = {
-        float3(0.2, 0.85, 1.0),
-        float3(0.25, 0.42, 1.0),
-        float3(0.6, 0.3, 1.0),
-        float3(1.0, 0.35, 0.85),
-        float3(1.0, 0.55, 0.6),
+        float3(0.85, 0.35, 1.0),
+        float3(0.42, 0.38, 1.0),
+        float3(0.25, 0.62, 1.0),
+        float3(0.35, 0.9, 1.0),
+        float3(0.92, 0.95, 1.0),
     };
-    float position = fract(t) * 5.0;
-    int i = int(position);
+    float position = saturate(t) * 4.0;
+    int i = min(int(position), 3);
     float f = smoothstep(0.0, 1.0, position - float(i));
-    return mix(colors[i], colors[(i + 1) % 5], f);
+    return mix(colors[i], colors[i + 1], f);
+}
+
+/// A mountain for each frequency band, the lows on the left and the highs
+/// on the right, as tall as the voice is strong in that band, with a round
+/// top and gentle slopes. They stand a little in front of or behind each
+/// other, so they read as a range rather than a row.
+static float bandPeaks(float x, float z, constant float* bands, constant ParticleUniforms& u) {
+    float height = 0;
+    for (int band = 0; band < bandCount; band++) {
+        float across = -1.0 + 2.0 * (float(band) + 0.5) / float(bandCount);
+        float2 d = float2((x - across * halfWidth * 0.8 * u.spread) / 0.19, (z - 0.25 * sin(float(band) * 2.3)) / 0.42);
+        height += bands[band] * exp(-dot(d, d));
+    }
+    return height;
 }
 
 /// Height of the field at `x`, `z`: broad crossing swells, finer waves
-/// running over them and a hill drifting along. The voice raises it all,
-/// lifts the finer waves most and speeds the waves up.
-static float fieldHeight(float x, float z, constant ParticleUniforms& u) {
+/// running over them and a hill drifting along, with the voice's mountains
+/// on top. The voice raises it all, lifts the finer waves most and speeds
+/// the waves up.
+static float fieldHeight(float x, float z, constant ParticleUniforms& u, constant float* bands) {
     float w = u.wavePhase;
     float swells = 0.5 * sin(1.3 * x + 0.9 * z + 0.55 * w)
         + 0.32 * sin(-2.1 * x + 1.7 * z + 0.8 * w + 1.3);
@@ -73,8 +91,11 @@ static float fieldHeight(float x, float z, constant ParticleUniforms& u) {
     float t = u.phase;
     float hillX = -0.45 + 0.5 * sin(t * 0.21);
     float hill = exp(-pow((x - hillX) / 0.65, 2.0)) * (0.7 + 0.3 * sin(t * 0.37 + 1.0));
-    float amplitude = (0.15 + 0.48 * u.lift) * u.spread;
-    return amplitude * (0.75 * swells + 0.7 * hill + (0.5 + 1.4 * u.lift) * waves);
+    float amplitude = (0.15 + 0.3 * u.lift) * u.spread;
+    // Fine ridges run down the mountains' sides.
+    float ridges = 0.94 + 0.06 * sin(9.0 * x + 2.0 * z + 0.6 * w);
+    return amplitude * (0.75 * swells + 0.7 * hill + (0.5 + 1.0 * u.lift) * waves)
+        + 0.85 * u.spread * bandPeaks(x, z, bands, u) * ridges;
 }
 
 struct ParticleVertex {
@@ -83,23 +104,45 @@ struct ParticleVertex {
     float3 color;
 };
 
-vertex ParticleVertex particleVertex(uint id [[vertex_id]], constant ParticleUniforms& u [[buffer(0)]]) {
+vertex ParticleVertex particleVertex(uint id [[vertex_id]],
+                                    constant ParticleUniforms& u [[buffer(0)]],
+                                    constant float* bands [[buffer(1)]]) {
     int column = int(id) % columns;
     int row = int(id) / columns;
     float2 cell = float2(column, row);
     float2 jitter = float2(hash(cell), hash(cell + 17.3)) - 0.5;
+    float energy = voiceEnergy(u.level);
+    // About one point in seven is dust floating over the field, drifting to
+    // the right and coming round again; the voice stirs it higher.
+    bool isDust = hash(cell + 7.7) < 0.14;
 
-    // -1 at the left end, 1 at the right. The grid is denser in the middle
-    // and opens up towards the ends and the front and back edges.
-    float across = (float(column) + 0.6 * jitter.x) / float(columns - 1) * 2.0 - 1.0;
-    across *= 0.55 + 0.45 * across * across;
-    // The field thins out towards both ends, like a leaf.
-    float body = smoothstep(1.0, 0.2, abs(across));
-    float x = across * halfWidth * u.spread;
-    float depth = (float(row) + 0.6 * jitter.y) / float(rows - 1) * 2.0 - 1.0;
-    depth *= 0.7 + 0.3 * depth * depth;
-    float z = depth * halfDepth * (0.2 + 0.8 * body);
-    float y = fieldHeight(x, z, u) * body;
+    // -1 at the left end, 1 at the right.
+    float across;
+    float body;
+    float depth;
+    float x;
+    float y;
+    float z;
+    if (isDust) {
+        across = fract(hash(cell + 3.1) + u.phase * (0.012 + 0.02 * hash(cell + 5.9))) * 2.0 - 1.0;
+        body = smoothstep(1.0, 0.4, abs(across));
+        depth = hash(cell + 9.4) * 2.0 - 1.0;
+        x = across * halfWidth * u.spread;
+        z = depth * halfDepth;
+        y = fieldHeight(x, z, u, bands) * body + (0.08 + 0.55 * hash(cell + 2.2)) * (0.6 + 0.8 * energy);
+    } else {
+        // The grid is denser in the middle and opens up towards the ends
+        // and the front and back edges.
+        across = (float(column) + 0.6 * jitter.x) / float(columns - 1) * 2.0 - 1.0;
+        across *= 0.55 + 0.45 * across * across;
+        // The field thins out towards both ends, like a leaf.
+        body = smoothstep(1.0, 0.2, abs(across));
+        x = across * halfWidth * u.spread;
+        depth = (float(row) + 0.6 * jitter.y) / float(rows - 1) * 2.0 - 1.0;
+        depth *= 0.7 + 0.3 * depth * depth;
+        z = depth * halfDepth * (0.2 + 0.8 * body);
+        y = fieldHeight(x, z, u, bands) * body;
+    }
 
     // Camera a little above the field, looking slightly down at it.
     const float3 eye = float3(0, 1.15, -2.9);
@@ -114,14 +157,11 @@ vertex ParticleVertex particleVertex(uint id [[vertex_id]], constant ParticleUni
     ParticleVertex out;
     out.position = float4(view.x * focal, view.y * focal * aspect, 0, 1);
 
-    // Bands of colour drift slowly along the field and across it, so it
-    // shimmers through the loop; the peaks run a little ahead, warmer, and
-    // turn paler.
+    // Colour runs across the field and drifts slowly; the peaks turn pale.
     float height = saturate((y + 0.08) / 0.6);
-    float3 color = shimmer(0.5 * across + 0.15 * depth + 0.35 * height - 0.06 * u.phase);
-    color = mix(color, float3(0.95, 0.9, 1.0), 0.3 * smoothstep(0.6, 1.0, height));
+    float3 color = fieldColor(0.5 + 0.5 * across + 0.08 * sin(u.phase * 0.2));
+    color = mix(color, float3(0.95, 0.97, 1.0), 0.45 * smoothstep(0.55, 1.0, height));
 
-    float energy = voiceEnergy(u.level);
     // Each point twinkles a little on its own, and a few sparkle.
     float seed = hash(cell + 41.7);
     float twinkle = 0.75 + 0.35 * sin(u.phase * (1.5 + 2.0 * seed) + seed * 40.0);
@@ -129,15 +169,25 @@ vertex ParticleVertex particleVertex(uint id [[vertex_id]], constant ParticleUni
     // Dots thin out away from the hills: in the hollows only about a third
     // of them show. They fade rather than pop as the field moves.
     float keep = smoothstep(-0.15, 0.15, 0.35 + 0.9 * height - hash(cell + 63.1));
-    float light = (0.3 + 0.7 * height) * (0.5 + 1.1 * energy + 1.2 * u.flash)
-        * twinkle * sparkle * keep * (0.45 + 0.55 * body)
-        // The back rows fade into the dark.
-        * (1.0 - 0.45 * (depth * 0.5 + 0.5));
+    float light;
+    if (isDust) {
+        color = mix(color, float3(1.0), 0.4);
+        light = 0.2 * (0.4 + 1.4 * energy + u.flash) * twinkle * twinkle * sparkle * body;
+    } else {
+        light = (0.3 + 0.7 * height) * (0.5 + 1.1 * energy + 1.2 * u.flash)
+            * twinkle * sparkle * keep * (0.45 + 0.55 * body)
+            // The back rows fade into the dark.
+            * (1.0 - 0.45 * (depth * 0.5 + 0.5));
+    }
+    // In focus at the middle of the field; nearer and further points spread
+    // into bigger, fainter dots.
+    float blur = saturate(abs(distance - length(eye)) / 0.9);
+    light /= 1.0 + 2.0 * blur;
     // Processing: a band of light sweeps along the field.
     light *= (0.85 + 0.3 * u.processing) * (1.0 + 0.9 * u.processing * exp(-pow((across - u.scan) / 0.25, 2.0)));
     out.color = color * light;
 
-    out.pointSize = u.scale * (1.1 + 0.8 * height) * (3.0 / distance) * (0.4 + 0.6 * keep);
+    out.pointSize = u.scale * (isDust ? 0.8 : (1.1 + 0.8 * height) * (0.4 + 0.6 * keep)) * (3.0 / distance) * (1.0 + 1.4 * blur);
     return out;
 }
 

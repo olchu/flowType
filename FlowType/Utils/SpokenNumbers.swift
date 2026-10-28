@@ -32,6 +32,12 @@ nonisolated enum SpokenNumbers {
         return output.joined(separator: " ")
     }
 
+    /// Whether `word`, as `TranscriptText.comparableWord` gives it, is a
+    /// number word in either language: "двадцать", "шестом", "twenty".
+    static func isNumberWord(_ word: String) -> Bool {
+        cardinal(word) != nil || ordinal(word) != nil || scales[word] != nil || word == "hundred"
+    }
+
     private enum Language {
         case russian, english
     }
@@ -232,6 +238,31 @@ nonisolated enum SpokenNumbers {
             let money = currency.language == .english ? currency.sign + amount : amount + "\u{00A0}" + currency.sign
             return (first.leading + money + next.trailing, number.end + 1)
         }
+        // A Russian year said in two halves, "двадцать двадцать шесть", or
+        // "20 26" from the recogniser. It is a year before "году" or at the
+        // end of a phrase: "в двадцать двадцать шестом году" → "в 2026 году",
+        // "двадцать двадцать шесть." → "2026.". Before any other word, a
+        // repeated first word is a stutter: "через двадцать двадцать пять
+        // минут" → "через 25 минут". After "в" or "к" it is a time, read
+        // below. The English halves are read with the times too.
+        if number.ordinalSuffix == nil, (19...20).contains(number.value), let next,
+           let second = read(at: number.end, in: tokens), second.language == number.language {
+            let isWritten = number.language == .russian && (10...99).contains(second.value)
+            let isTyped = number.language == nil && next.core.count == 2
+            let after = second.end < tokens.count && tokens[second.end - 1].trailing.isEmpty ? tokens[second.end] : nil
+            let isBeforeYearWord = after.map { russianYearWords.contains($0.core) } ?? false
+            let endsPhrase = after == nil && !timePrepositions.contains(previous ?? "")
+            if (isWritten || isTyped) && (isBeforeYearWord || endsPhrase) {
+                // "в 2026 году", but "двадцать двадцать пятый." → "2025-й.".
+                let ending = isBeforeYearWord ? "" : (second.ordinalSuffix ?? "") + tokens[second.end - 1].trailing
+                return (first.leading + "\(number.value * 100 + second.value)" + ending, second.end)
+            }
+            if isWritten, first.core == next.core, !isBeforeYearWord {
+                return replacement(at: number.end, in: tokens, keepsSmallNumbersAsWords: keepsSmallNumbersAsWords)
+                    .map { (first.leading + $0.0, $0.1) } ?? (first.leading + next.text, number.end + 1)
+            }
+        }
+
         // Typed digits are otherwise left as the recogniser wrote them.
         guard let language = number.language else { return nil }
 

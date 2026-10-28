@@ -4,61 +4,60 @@ struct TranscriptionSettingsPane: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        Form {
-            Section {
-                Picker("Language", selection: $appState.settings.language) {
-                    ForEach(TranscriptionLanguage.allCases) { language in
-                        Text(language.rawValue).tag(language)
-                    }
-                }
-                .pickerStyle(.segmented)
-            } footer: {
-                Text("Auto lets the model detect the language of each dictation.")
+        SettingsPage(.transcription) {
+            SettingsSection("Language", footer: "Auto lets the model detect the language of each dictation.") {
+                SettingsSegmentedPicker(
+                    label: "Language",
+                    selection: $appState.settings.language,
+                    options: TranscriptionLanguage.allCases,
+                    title: \.rawValue
+                )
             }
 
             if appState.settings.profile.model.supportsStreaming {
-                Section {
-                    Picker("Finalization", selection: $appState.settings.finalizationMode) {
-                        ForEach(TranscriptionFinalizationMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                SettingsSection("Streaming", footer: appState.settings.finalizationMode.detail) {
+                    SettingsRow("Finalization") {
+                        Picker("Finalization", selection: $appState.settings.finalizationMode) {
+                            ForEach(TranscriptionFinalizationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
                         }
+                        .labelsHidden()
+                        .fixedSize()
                     }
-                } header: {
-                    Text("Streaming")
-                } footer: {
-                    Text(appState.settings.finalizationMode.detail)
                 }
             }
 
-            Section {
-                Picker("Mode", selection: $appState.settings.cleanupMode) {
-                    ForEach(TranscriptCleanupMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
+            SettingsSection("Cleanup", footer: cleanupFooter) {
+                SettingsSegmentedPicker(
+                    label: "Cleanup mode",
+                    selection: $appState.settings.cleanupMode,
+                    options: TranscriptCleanupMode.allCases,
+                    title: \.rawValue
+                )
 
                 if appState.settings.cleanupMode == .localLLM {
-                    Picker("Model", selection: $appState.settings.cleanupModel) {
-                        ForEach(CleanupLLMModel.allCases) { model in
-                            Text(model.rawValue).tag(model)
+                    SettingsRow("Model") {
+                        Picker("Model", selection: $appState.settings.cleanupModel) {
+                            ForEach(CleanupLLMModel.allCases) { model in
+                                Text(model.rawValue).tag(model)
+                            }
                         }
+                        .labelsHidden()
+                        .fixedSize()
                     }
 
-                    LabeledContent("Status") {
-                        if appState.isCleanupModelWarmingUp {
-                            HStack(spacing: 6) {
+                    SettingsRow("Status") {
+                        HStack(spacing: 8) {
+                            if appState.isCleanupModelWarmingUp {
                                 ProgressView()
                                     .controlSize(.small)
-
-                                Text(appState.cleanupModelMessage)
-                                    .foregroundStyle(.secondary)
                             }
-                        } else {
-                            HStack(spacing: 8) {
-                                Text(appState.cleanupModelMessage)
-                                    .foregroundStyle(.secondary)
 
+                            Text(appState.cleanupModelMessage)
+                                .foregroundStyle(.secondary)
+
+                            if !appState.isCleanupModelWarmingUp {
                                 Button("Load") {
                                     appState.prewarmTranscriptCleanupModel()
                                 }
@@ -67,15 +66,15 @@ struct TranscriptionSettingsPane: View {
                         }
                     }
                 }
-            } header: {
-                Text("Cleanup")
-            } footer: {
-                if appState.settings.cleanupMode == .localLLM {
-                    Text("\(appState.settings.cleanupMode.detail) \(appState.settings.cleanupModel.detail)")
-                } else {
-                    Text(appState.settings.cleanupMode.detail)
-                }
             }
+        }
+    }
+
+    private var cleanupFooter: String {
+        if appState.settings.cleanupMode == .localLLM {
+            "\(appState.settings.cleanupMode.detail) \(appState.settings.cleanupModel.detail)"
+        } else {
+            appState.settings.cleanupMode.detail
         }
     }
 }

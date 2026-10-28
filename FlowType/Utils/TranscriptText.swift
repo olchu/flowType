@@ -156,7 +156,12 @@ enum TranscriptText {
         let previousComparable = comparableWord(previous)
         let currentComparable = comparableWord(current)
 
-        guard previousComparable.count >= 5 && currentComparable.count >= 5 else {
+        guard previousComparable.count >= 5 && currentComparable.count >= 5,
+              // A repeated number word may be a year said in two halves,
+              // "двадцать двадцать шесть"; SpokenNumbers tells it from a
+              // stutter by what follows.
+              !SpokenNumbers.isNumberWord(currentComparable)
+        else {
             return false
         }
 

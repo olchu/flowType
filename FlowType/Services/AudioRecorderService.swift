@@ -21,7 +21,9 @@ final class AudioRecorderService {
     private var samples: [Float] = []
     private var sampleRate: Double = 0
     private var isRecording: Bool { engine != nil }
-    var onLevelChanged: ((Double) -> Void)?
+    /// The level of each buffer, and the shape of its spectrum; see
+    /// SpectrumAnalyzer.
+    var onLevelChanged: ((Double, SpectrumBands) -> Void)?
 
     func startRecording() throws {
         guard !isRecording else {
@@ -38,6 +40,7 @@ final class AudioRecorderService {
 
         samples.removeAll(keepingCapacity: true)
         sampleRate = format.sampleRate
+        let analyzer = SpectrumAnalyzer(sampleRate: format.sampleRate)
 
         inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
             guard let channelData = buffer.floatChannelData else { return }
@@ -61,9 +64,10 @@ final class AudioRecorderService {
             }
 
             let level = Self.level(sumSquares: sumSquares, frameCount: frameCount)
+            let bands = analyzer?.bands(of: monoSamples) ?? .zero
 
             Task { @MainActor in
-                self?.appendSamples(monoSamples, level: level)
+                self?.appendSamples(monoSamples, level: level, bands: bands)
             }
         }
 
@@ -81,7 +85,7 @@ final class AudioRecorderService {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
-        onLevelChanged?(0)
+        onLevelChanged?(0, .zero)
 
         // Resampled once here so the VAD and the decoders all get audio at
         // their native rate instead of each converting the whole recording.
@@ -89,9 +93,9 @@ final class AudioRecorderService {
             .resampled(to: RecordedAudio.speechSampleRate)
     }
 
-    private func appendSamples(_ newSamples: [Float], level: Double) {
+    private func appendSamples(_ newSamples: [Float], level: Double, bands: SpectrumBands) {
         samples.append(contentsOf: newSamples)
-        onLevelChanged?(level)
+        onLevelChanged?(level, bands)
     }
 
     nonisolated private static func level(sumSquares: Float, frameCount: Int) -> Double {

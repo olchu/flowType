@@ -68,7 +68,8 @@ final class ParticleFieldRenderer {
 
     /// Renders one frame into `drawable`, which must be in `pixelFormat` and
     /// of the size in `uniforms`, and presents it.
-    func render(_ uniforms: Uniforms, to drawable: CAMetalDrawable) {
+    /// `bands` raise the field's mountains, lowest frequency first.
+    func render(_ uniforms: Uniforms, bands: SpectrumBands, to drawable: CAMetalDrawable) {
         let target = drawable.texture
         guard let light = lightTexture(width: target.width, height: target.height),
               let commands = queue.makeCommandBuffer()
@@ -85,6 +86,8 @@ final class ParticleFieldRenderer {
         if let encoder = commands.makeRenderCommandEncoder(descriptor: lightPass) {
             encoder.setRenderPipelineState(particlePipeline)
             encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+            var bands = bands
+            encoder.setVertexBytes(&bands, length: MemoryLayout<SpectrumBands>.size, index: 1)
             encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: Self.particleCount)
             encoder.endEncoding()
         }

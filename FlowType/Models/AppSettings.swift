@@ -116,6 +116,10 @@ struct AppSettings: Codable, Equatable {
     var indicatorStyle: IndicatorStyle = .bars
     var waveColor: WaveColor = .blue
     var auroraPalette: AuroraPalette = .nebula
+    /// The indicator's centre where the user placed it, in global screen
+    /// coordinates, so it fits every style whatever its size; nil above the
+    /// Dock.
+    var indicatorPosition: CGPoint?
     var playsSounds = true
     /// Scales every feedback cue; 0.5 is the recommended level.
     var soundVolume = 0.5
@@ -153,6 +157,7 @@ struct AppSettings: Codable, Equatable {
         indicatorStyle = (try? container.decodeIfPresent(IndicatorStyle.self, forKey: .indicatorStyle)) ?? defaults.indicatorStyle
         waveColor = (try? container.decodeIfPresent(WaveColor.self, forKey: .waveColor)) ?? defaults.waveColor
         auroraPalette = (try? container.decodeIfPresent(AuroraPalette.self, forKey: .auroraPalette)) ?? defaults.auroraPalette
+        indicatorPosition = try? container.decodeIfPresent(CGPoint.self, forKey: .indicatorPosition)
         playsSounds = try container.decodeIfPresent(Bool.self, forKey: .playsSounds) ?? defaults.playsSounds
         soundVolume = try container.decodeIfPresent(Double.self, forKey: .soundVolume) ?? defaults.soundVolume
     }

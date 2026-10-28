@@ -8,6 +8,11 @@ import os
 final class AppState: ObservableObject {
     @Published var status: AppStatus = .ready {
         didSet {
+            // Dictating while placing the indicator keeps where it was left,
+            // so the real voice drives it, not the made-up one.
+            if status == .recording {
+                finishIndicatorPositioning(keeps: true)
+            }
             updateFloatingIndicator()
             updateEscapeInterception()
         }
@@ -16,6 +21,7 @@ final class AppState: ObservableObject {
         didSet {
             guard settings != oldValue else { return }
             settingsStorageService.save(settings)
+            floatingIndicatorController.placement = settings.indicatorPosition
             if settings.indicatorAppearance != oldValue.indicatorAppearance {
                 updateFloatingIndicator()
             }
@@ -30,6 +36,8 @@ final class AppState: ObservableObject {
     }
     @Published var lastErrorMessage: String?
     @Published private(set) var isHotkeyRunning = false
+    /// While the user drags the indicator to where it should appear.
+    @Published private(set) var isPositioningIndicator = false
     /// False when another app already holds ⌃⌥V.
     @Published private(set) var isPasteLastHotKeyAvailable = false
     @Published private(set) var hotkeyStatusMessage = "Waiting for Accessibility permission."
@@ -94,17 +102,21 @@ final class AppState: ObservableObject {
     private var audioLevel: Double = 0 {
         didSet {
             floatingIndicatorController.setAudioLevel(
-                Self.gatedLevel(audioLevel, sensitivity: settings.microphoneSensitivity)
+                Self.gatedLevel(audioLevel, sensitivity: settings.microphoneSensitivity),
+                bands: spectrum
             )
         }
     }
+    /// The shape of the latest buffer's spectrum, for the Particles peaks.
+    private var spectrum = SpectrumBands.zero
 
     init() {
         settings = settingsStorageService.load()
+        floatingIndicatorController.placement = settings.indicatorPosition
         hasCompletedOnboarding = settingsStorageService.hasCompletedOnboarding()
-        audioRecorder.onLevelChanged = { [weak self] level in
+        audioRecorder.onLevelChanged = { [weak self] level, bands in
             guard let self else { return }
-            updateAudioLevel(level)
+            updateAudioLevel(level, bands: bands)
         }
 
         refreshPermissions()
@@ -474,14 +486,33 @@ final class AppState: ObservableObject {
         return TranscriptText.joined(prefix: confirmedTranscript, continuation: tailTranscript)
     }
 
-    private func updateAudioLevel(_ level: Double) {
+    private func updateAudioLevel(_ level: Double, bands: SpectrumBands) {
         if let startCueMaskEnd, ContinuousClock.now < startCueMaskEnd {
             return
         }
 
+        spectrum = bands
         let clampedLevel = min(1, max(0, level))
         let smoothing = clampedLevel > audioLevel ? 0.6 : 0.3
         audioLevel += (clampedLevel - audioLevel) * smoothing
+    }
+
+    /// Shows the indicator so the user can drag it where it should appear.
+    func beginIndicatorPositioning() {
+        guard status != .recording, status != .transcribing else { return }
+        isPositioningIndicator = floatingIndicatorController.beginPositioning(appearance: settings.indicatorAppearance)
+    }
+
+    /// Hides the indicator again, keeping where it was left if `keeps`.
+    func finishIndicatorPositioning(keeps: Bool) {
+        guard isPositioningIndicator else { return }
+        isPositioningIndicator = false
+        if let centre = floatingIndicatorController.endPositioning(keeps: keeps) {
+            settings.indicatorPosition = centre
+        }
+        // Back to what the indicator should show: nothing, or the model
+        // still loading.
+        updateFloatingIndicator()
     }
 
     func clearError() {

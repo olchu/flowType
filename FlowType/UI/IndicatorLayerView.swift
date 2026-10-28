@@ -98,6 +98,6 @@ class IndicatorLayerView: NSView {
             stopDisplayLink()
             return
         }
-        render(engine.advance(mode: mode, audioLevel: model.audioLevel, at: now))
+        render(engine.advance(mode: mode, audioLevel: model.audioLevel, audioBands: model.audioBands, at: now))
     }
 }

@@ -11,21 +11,19 @@ struct IndicatorSettingsPane: View {
     @State private var optionPresses: [Date] = []
 
     var body: some View {
-        Form {
-            Section {
-                IndicatorPreview(appearance: appState.settings.indicatorAppearance)
-            }
+        SettingsPage(.indicator) {
+            IndicatorPreview(appearance: appState.settings.indicatorAppearance)
 
-            Section("Appearance") {
-                Picker("Animation", selection: $appState.settings.indicatorStyle) {
-                    ForEach(IndicatorStyle.allCases) { style in
-                        Text(style.rawValue).tag(style)
-                    }
-                }
-                .pickerStyle(.segmented)
+            SettingsSection("Appearance") {
+                SettingsSegmentedPicker(
+                    label: "Animation",
+                    selection: $appState.settings.indicatorStyle,
+                    options: IndicatorStyle.allCases,
+                    title: \.rawValue
+                )
 
                 if appState.settings.indicatorStyle.usesAuroraPalette {
-                    LabeledContent("Palette") {
+                    SettingsRow("Palette") {
                         HStack(spacing: 4) {
                             ForEach(AuroraPalette.allCases) { palette in
                                 auroraPaletteSwatch(palette)
@@ -35,7 +33,7 @@ struct IndicatorSettingsPane: View {
                 }
 
                 if appState.settings.indicatorStyle.usesWaveColor {
-                    LabeledContent("Color") {
+                    SettingsRow("Color") {
                         HStack(spacing: 4) {
                             ForEach(WaveColor.allCases) { color in
                                 waveColorSwatch(color)
@@ -45,7 +43,7 @@ struct IndicatorSettingsPane: View {
 
                     // The tuner only edits the waves.
                     if showsTuner && appState.settings.indicatorStyle == .waves {
-                        LabeledContent("Glow and layers") {
+                        SettingsRow("Glow and layers") {
                             Button("Fine-tune…") {
                                 openWindow(id: "wave-tuner")
                                 NSApplication.shared.activate(ignoringOtherApps: true)
@@ -55,15 +53,46 @@ struct IndicatorSettingsPane: View {
                 }
             }
 
-            Section {
+            SettingsSection(
+                "Position",
+                footer: "Choose, then drag the indicator anywhere on any screen. It appears there every time; if that screen is gone, it goes back above the Dock."
+            ) {
+                SettingsRow(
+                    "Position",
+                    subtitle: appState.isPositioningIndicator
+                        ? "Drag the indicator, then click Done."
+                        : (appState.settings.indicatorPosition == nil ? "Above the Dock" : "Where you placed it")
+                ) {
+                    HStack(spacing: 8) {
+                        if appState.isPositioningIndicator {
+                            Button("Cancel") {
+                                appState.finishIndicatorPositioning(keeps: false)
+                            }
+
+                            Button("Done") {
+                                appState.finishIndicatorPositioning(keeps: true)
+                            }
+                            .buttonStyle(.settingsProminent)
+                        } else {
+                            if appState.settings.indicatorPosition != nil {
+                                Button("Reset") {
+                                    appState.settings.indicatorPosition = nil
+                                }
+                            }
+
+                            Button("Choose…") {
+                                appState.beginIndicatorPositioning()
+                            }
+                        }
+                    }
+                }
+            }
+
+            SettingsSection("Microphone", footer: "Lower values ignore more background noise. Higher values make the indicator react to quieter speech.") {
                 PercentSlider(
                     title: "Sensitivity",
                     value: $appState.settings.microphoneSensitivity
                 )
-            } header: {
-                Text("Microphone")
-            } footer: {
-                Text("Lower values ignore more background noise. Higher values make the indicator react to quieter speech.")
             }
         }
         .onAppear {
@@ -76,6 +105,8 @@ struct IndicatorSettingsPane: View {
             }
         }
         .onDisappear {
+            // Leaving the pane keeps where the indicator was dragged.
+            appState.finishIndicatorPositioning(keeps: true)
             if let optionKeyMonitor {
                 NSEvent.removeMonitor(optionKeyMonitor)
             }
@@ -125,7 +156,7 @@ struct IndicatorSettingsPane: View {
                 .padding(3)
                 .overlay {
                     Circle()
-                        .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+                        .strokeBorder(isSelected ? SettingsStyle.ink : .clear, lineWidth: 2)
                 }
         }
         .buttonStyle(.plain)
@@ -144,28 +175,19 @@ private struct IndicatorPreview: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.12, green: 0.16, blue: 0.3),
-                            Color(red: 0.24, green: 0.2, blue: 0.42),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(SettingsStyle.preview)
 
             FloatingIndicatorView(model: model)
                 .scaleEffect(appearance.style == .bars ? 2 : 1)
 
             Text("Preview")
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(10)
+                .padding(14)
         }
-        .frame(height: 150)
+        .frame(height: 170)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Preview of the \(appearance.style.rawValue) indicator")
         .onAppear {
@@ -176,14 +198,7 @@ private struct IndicatorPreview: View {
             show(startsNewPresentation: new.style != old.style)
         }
         .task {
-            // Rising and falling level, like a few spoken words.
-            let start = Date.now
-            while !Task.isCancelled {
-                let time = Date.now.timeIntervalSince(start)
-                let words = abs(sin(time * 2.3)) * (0.55 + 0.45 * sin(time * 0.7))
-                model.audioLevel = max(0, 0.15 + 0.55 * words)
-                try? await Task.sleep(for: .milliseconds(50))
-            }
+            await DemoVoice.drive(model)
         }
     }
 

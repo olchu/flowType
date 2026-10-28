@@ -48,14 +48,7 @@ struct WaveTunerView: View {
                 model.audioLevel = level
                 return
             }
-            // Rising and falling level, like a few spoken words.
-            let start = Date.now
-            while !Task.isCancelled {
-                let time = Date.now.timeIntervalSince(start)
-                let words = abs(sin(time * 2.3)) * (0.55 + 0.45 * sin(time * 0.7))
-                model.audioLevel = max(0, 0.15 + 0.55 * words)
-                try? await Task.sleep(for: .milliseconds(50))
-            }
+            await DemoVoice.drive(model)
         }
     }
 

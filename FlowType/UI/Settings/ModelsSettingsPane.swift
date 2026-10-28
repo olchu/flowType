@@ -4,39 +4,21 @@ struct ModelsSettingsPane: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        Form {
-            Section {
+        SettingsPage(.models) {
+            SettingsSection("Active model") {
                 activeModel
             }
 
-            Section {
+            SettingsSection("Profiles", footer: "Models run on this Mac. Each one is downloaded once and kept until you delete it.") {
                 ForEach(TranscriptionProfile.allCases) { profile in
                     ProfileRow(profile: profile)
                 }
-            } header: {
-                Text("Speech recognition")
-            } footer: {
-                Text("Models run on this Mac. Each one is downloaded once and kept until you delete it.")
             }
         }
     }
 
     private var activeModel: some View {
-        HStack(spacing: 12) {
-            SettingsIcon(systemName: "cpu.fill", tint: .purple, size: 30)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(appState.settings.profile.model.rawValue)
-                    .font(.headline)
-
-                Text(appState.modelWarmupMessage)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 12)
-
+        SettingsRow(appState.settings.profile.model.rawValue, subtitle: appState.modelWarmupMessage, icon: "cpu") {
             if appState.isModelWarmingUp {
                 HStack(spacing: 8) {
                     ProgressView(value: appState.modelLoadingProgress)
@@ -53,7 +35,6 @@ struct ModelsSettingsPane: View {
                 StatusBadge("Not downloaded", tone: .warning)
             }
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -75,11 +56,11 @@ private struct ProfileRow: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.5))
+                    .foregroundStyle(isSelected ? SettingsStyle.ink : Color.secondary.opacity(0.5))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(profile.rawValue)
-                        .font(.headline)
+                        .fontWeight(.medium)
 
                     Text(profile.detail)
                         .font(.callout)
@@ -107,7 +88,6 @@ private struct ProfileRow: View {
 
             storageControls
         }
-        .padding(.vertical, 4)
         .confirmationDialog(
             "Delete \(profile.model.rawValue)?",
             isPresented: $isConfirmingDelete

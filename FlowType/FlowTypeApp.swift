@@ -19,6 +19,7 @@ struct FlowTypeApp: App {
         } label: {
             Image("statusbar")
                 .accessibilityLabel("Flow Type")
+                .background(SettingsOnLaunch())
         }
         .menuBarExtraStyle(.menu)
 
@@ -26,6 +27,9 @@ struct FlowTypeApp: App {
             SettingsView()
                 .environmentObject(appState)
         }
+        // No title bar strip: each page shows its own large title, and the
+        // window buttons sit over the sidebar.
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 820, height: 620)
         .windowResizability(.contentMinSize)
 
@@ -38,9 +42,33 @@ struct FlowTypeApp: App {
     }
 }
 
+/// Opens the settings window at launch for `--open-settings`. It sits in
+/// the menu bar label, the one view drawn at launch: opening a window needs
+/// SwiftUI's `openWindow`, and on macOS 14 no scene can open itself.
+private struct SettingsOnLaunch: View {
+    /// The label can appear again, after a display change for one; the
+    /// window opens only the first time.
+    private static var hasOpened = false
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Color.clear
+            .task {
+                guard LaunchArguments.opensSettings, !Self.hasOpened else { return }
+                Self.hasOpened = true
+                openWindow(id: "settings")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if let transcript = Self.cleanupTranscriptArgument {
+        if let appearance = LaunchArguments.appearance {
+            NSApp.appearance = appearance
+        }
+
+        if let transcript = LaunchArguments.cleanupTranscript {
             Task {
                 let service = TranscriptCleanupService()
                 try? await service.prewarmLocalLLM(model: Self.cleanupModelArgument)
@@ -58,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard ProcessInfo.processInfo.arguments.contains("--prewarm-cleanup-model") else { return }
+        guard LaunchArguments.prewarmsCleanupModel else { return }
 
         Task {
             do {
@@ -72,22 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private static var cleanupTranscriptArgument: String? {
-        argument(after: "--cleanup-transcript")
-    }
-
-    /// `--cleanup-model "Qwen3 4B"`; defaults to the saved setting.
+    /// The `--cleanup-model` one, or the saved setting.
     private static var cleanupModelArgument: CleanupLLMModel {
-        argument(after: "--cleanup-model").flatMap(CleanupLLMModel.init(rawValue:))
-            ?? SettingsStorageService().load().cleanupModel
-    }
-
-    private static func argument(after flag: String) -> String? {
-        let arguments = ProcessInfo.processInfo.arguments
-        guard let index = arguments.firstIndex(of: flag) else { return nil }
-
-        let valueIndex = arguments.index(after: index)
-        guard valueIndex < arguments.endIndex else { return nil }
-        return arguments[valueIndex]
+        LaunchArguments.cleanupModel ?? SettingsStorageService().load().cleanupModel
     }
 }

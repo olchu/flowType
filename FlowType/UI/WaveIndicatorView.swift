@@ -340,12 +340,15 @@ final class WaveEngine {
     }
 
     struct Frame {
-        static let hidden = Frame(level: 0, voiceLevel: 0, clock: 0, spread: 0, visibility: 0, flash: 0, scan: 0, scanAmount: 0, elapsed: 0, dismissalAge: nil)
+        static let hidden = Frame(level: 0, voiceLevel: 0, bands: .zero, clock: 0, spread: 0, visibility: 0, flash: 0, scan: 0, scanAmount: 0, elapsed: 0, dismissalAge: nil)
 
         /// The voice while listening, a made-up pulse while processing.
         var level: Double
         /// The voice alone: like `level` while listening, easing to 0 otherwise.
         var voiceLevel: Double
+        /// The voice per frequency band: the spectrum's shape scaled by
+        /// `voiceLevel`, so it settles to 0 when not listening.
+        var bands: SpectrumBands
         var clock: Double
         /// 0 is the collapsed orb, 1 is full-width waves.
         var spread: Double
@@ -363,6 +366,7 @@ final class WaveEngine {
 
     private var level = 0.0
     private var voiceLevel = 0.0
+    private var bandShape = SpectrumBands.zero
     private var clock = 0.0
     private var spread = 0.0
     private var visibility = 0.0
@@ -379,6 +383,7 @@ final class WaveEngine {
         lastTime = nil
         level = 0
         voiceLevel = 0
+        bandShape = .zero
         spread = 0
         visibility = 0
         scanAmount = 0
@@ -394,7 +399,7 @@ final class WaveEngine {
         dismissedAt = nil
     }
 
-    func advance(mode: Mode, audioLevel: Double, at time: TimeInterval) -> Frame {
+    func advance(mode: Mode, audioLevel: Double, audioBands: SpectrumBands, at time: TimeInterval) -> Frame {
         let elapsed = min(max(time - (lastTime ?? time), 0), 0.1)
         lastTime = time
 
@@ -413,6 +418,11 @@ final class WaveEngine {
         level = Self.ease(level, toward: targetLevel, rate: targetLevel > level ? 35 : 10, elapsed: elapsed)
         let targetVoice = mode == .listening ? audioLevel : 0
         voiceLevel = Self.ease(voiceLevel, toward: targetVoice, rate: targetVoice > voiceLevel ? 35 : 10, elapsed: elapsed)
+        for band in 0..<SpectrumAnalyzer.bandCount {
+            let current = Double(bandShape[band])
+            let target = Double(audioBands[band])
+            bandShape[band] = Float(Self.ease(current, toward: target, rate: target > current ? 30 : 8, elapsed: elapsed))
+        }
         // Waves drift twice as fast while processing, so the wait feels short.
         clock += elapsed * (1 + 1.8 * level) * (mode == .processing ? 2 : 1)
         scanAmount = Self.ease(scanAmount, toward: mode == .processing ? 1 : 0, rate: 12, elapsed: elapsed)
@@ -432,6 +442,7 @@ final class WaveEngine {
         return Frame(
             level: level,
             voiceLevel: voiceLevel,
+            bands: bandShape * Float(voiceLevel),
             clock: clock,
             spread: spread,
             visibility: visibility,
