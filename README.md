@@ -28,7 +28,11 @@ If you press `Fn` and say nothing, nothing is pasted: the speech detector drops 
 
 To cancel, press `Esc` while recording or while the text is being processed. Nothing is pasted, and the `Esc` doesn't reach the app you're typing in.
 
-If the text went nowhere, say because the cursor wasn't in a text field, put the cursor where it belongs and press `⌃⌥V`. FlowType keeps the last dictation in its own memory, never on disk, and pastes it again, whatever is on the clipboard by then.
+If the text went nowhere, say because the cursor wasn't in a text field, put the cursor where it belongs and press `⌃⌥V`. FlowType pastes the last dictation again, whatever is on the clipboard by then.
+
+To take back what you just dictated, hold `Fn` and say “отмени”, “удали последнее” or “undo that”. It works right after the dictation, in the same field, while the cursor is still after it.
+
+Each dictation fits into the text around the cursor. After a word or a comma it goes on with a small letter and a space, at the start of a line or a sentence it takes a capital, and with text after the cursor it leaves out its full stop. Names keep their capital. FlowType reads the text around the cursor through Accessibility; where an app doesn't tell it, as many Electron apps don't, a dictation right after the last one goes on from it.
 
 ## Features
 
@@ -65,6 +69,12 @@ The default mode, *Local rules*, is a set of fast built-in rules that remove rep
 *Write numbers as digits* works in Russian and English. Russian numbers turn into digits in any case: “двадцати пяти” becomes 25, “двадцать первый” becomes 21-й, “двадцать пять процентов” becomes 25%, “пять тысяч рублей” becomes 5000 ₽ and “в девять тридцать” becomes в 9:30. Dates and years are written as in edited text, “25 октября” and “в 2026 году”. In English, “twenty-five” becomes 25, “twenty-first” becomes 21st, “five dollars” becomes $5, “at nine thirty” becomes at 9:30 and “nineteen ninety” becomes 1990. Numbers under ten stay words unless you switch that off, so “у меня два кота” and “two cats” are left alone.
 
 *Write spoken punctuation* turns “точка”, “запятая”, “точка с запятой”, “двоеточие”, “многоточие”, “тире”, “вопросительный знак” or “знак вопроса”, “восклицательный знак”, “открыть кавычки”, “закрыть кавычки”, “открыть скобку”, “закрыть скобку”, “новая строка” and “новый абзац”, or “period”, “comma”, “semicolon”, “colon”, “ellipsis”, “dash”, “question mark”, “exclamation mark”, “open quote”, “close quote”, “open bracket”, “close bracket”, “new line” and “new paragraph”, into marks and line breaks. Commands that are also everyday words, like “точка”, “запятая” or “новая строка”, work only where a phrase ends: before a short pause, another command or the end of the dictation. So “Привет, запятая, как дела, вопросительный знак” becomes “Привет, как дела?” while “точка зрения” stays. Names that mean nothing but a mark, like “тире” or “открыть скобку”, work anywhere: “он сказал открыть кавычки привет закрыть кавычки” becomes “он сказал «привет»”.
+
+*End without a full stop* leaves out the full stop at the end of a dictation, which suits chats and continuing a sentence. Say “точка” or “period” when you want one.
+
+The *Dictionary* holds words and names the recogniser gets wrong, written your way: “флоу тайп” becomes “Flow Type”. Case and “ё” don't matter, and the punctuation around the phrase stays.
+
+*Settings → Snippets* holds text that a short phrase stands for: say “моя почта” on its own, and your address is pasted exactly as written. A snippet can have several phrases (“моя почта”, “мой имейл”) and can also work inside a longer phrase. Snippets are kept in the Keychain.
 
 *Local LLM* applies the same rules and then runs a small language model on your Mac, built on [MLX](https://github.com/ml-explore/mlx-swift-lm), to fix punctuation and obvious recognition errors. If its edit adds or drops more than a stray word, FlowType throws it out and keeps the rule-based text.
 
@@ -105,19 +115,24 @@ Short cues play when recording starts and stops and when the text is pasted, so 
 
 The indicator doesn't mistake the start cue for your voice. With sounds off, the waves react to speech straight away.
 
+### History
+
+FlowType keeps the last 100 dictations from the past week. *History…* in the menu opens them with a search field; a click pastes one into the app in front. The history is stored on disk encrypted with AES-GCM, with the key in the Keychain, and can be cleared or switched off in *Settings → General*. Audio is never saved.
+
 ### Menu and settings
 
 <p align="center">
   <img src="Docs/images/settings.png" alt="The Settings window with the Models and Indicator panes" width="100%">
 </p>
 
-The menu shows the current status and model loading progress, and switches the indicator style. Settings live in one window with a sidebar, the way System Settings does it:
+The menu shows the current status and model loading progress, switches the indicator style and opens the history. Settings live in one window with a sidebar, the way System Settings does it:
 
-- General: hotkey, auto-paste and clipboard restore, open at login, reset settings.
+- General: hotkey, auto-paste and clipboard restore, history, open at login, reset settings.
 - Permissions: microphone and Accessibility. Changes you make in System Settings are picked up automatically.
 - Models: profile choice, model download and deletion, loading progress of the active model.
 - Transcription: language, streaming mode and text cleanup.
-- Text Rules: rules applied to the text after recognition, each with its own switch: filler words, numbers as digits and spoken punctuation.
+- Text Rules: fitting the text around the cursor, the full stop at the end, filler words, numbers as digits, spoken punctuation, the dictionary and the undo command.
+- Snippets: phrases that stand for longer text, such as your email or address.
 - Indicator: style (Bars, Waves, Dots, Aurora or Particles), colour or palette, position and sensitivity, with a live preview. *Choose…* under Position shows the indicator so you can drag it anywhere on any screen; it appears there from then on.
 - Sounds: on/off, volume and cue previews.
 

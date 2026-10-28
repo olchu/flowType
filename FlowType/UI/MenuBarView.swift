@@ -41,6 +41,13 @@ struct MenuBarView: View {
             Divider()
 
             Button {
+                openWindow(id: "history")
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            } label: {
+                Label("History...", systemImage: "clock")
+            }
+
+            Button {
                 openWindow(id: "settings")
                 NSApplication.shared.activate(ignoringOtherApps: true)
             } label: {

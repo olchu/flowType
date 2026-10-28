@@ -7,6 +7,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
     case models
     case transcription
     case textRules
+    case snippets
     case indicator
     case sounds
 
@@ -24,6 +25,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             "Transcription"
         case .textRules:
             "Text Rules"
+        case .snippets:
+            "Snippets"
         case .indicator:
             "Indicator"
         case .sounds:
@@ -44,6 +47,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             "bubble.left"
         case .textRules:
             "list.bullet"
+        case .snippets:
+            "text.bubble"
         case .indicator:
             "waveform"
         case .sounds:
@@ -63,6 +68,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             "How your speech becomes text."
         case .textRules:
             "Rules applied to the text after recognition."
+        case .snippets:
+            "Short phrases that stand for longer text."
         case .indicator:
             "How the indicator above the Dock looks and reacts."
         case .sounds:
@@ -188,6 +195,8 @@ struct SettingsView: View {
                 TranscriptionSettingsPane()
             case .textRules:
                 TextRulesSettingsPane()
+            case .snippets:
+                SnippetsSettingsPane()
             case .indicator:
                 IndicatorSettingsPane()
             case .sounds:

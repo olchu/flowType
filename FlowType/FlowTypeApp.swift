@@ -33,6 +33,12 @@ struct FlowTypeApp: App {
         .defaultSize(width: 820, height: 620)
         .windowResizability(.contentMinSize)
 
+        Window("History", id: "history") {
+            HistoryView(history: appState.history)
+                .environmentObject(appState)
+        }
+        .defaultSize(width: 560, height: 520)
+
         Window("Wave Tuner", id: "wave-tuner") {
             WaveTunerView()
                 .environmentObject(appState)
@@ -75,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let start = ContinuousClock.now
                 let result = await service.clean(
                     transcript, mode: .localLLM, model: Self.cleanupModelArgument,
-                    rules: SettingsStorageService().load().textRules
+                    rules: SettingsStorageService().load().textRules(snippets: [])
                 )
                 let elapsed = start.duration(to: .now)
                 print(result.text)

@@ -8,6 +8,20 @@ struct TextRulesSettingsPane: View {
 
     var body: some View {
         SettingsPage(.textRules) {
+            SettingsSection("Around the cursor", footer: "Flow Type reads the text around the cursor through Accessibility. Where an app doesn't tell it, as many Electron apps don't, a dictation right after the last one goes on from it.") {
+                SettingsToggle(
+                    "Fit the text around the cursor",
+                    subtitle: "After a word or a comma the dictation goes on with a small letter and a space; at the start of a line or a sentence it takes a capital.",
+                    isOn: $appState.settings.fitsTextAroundCursor
+                )
+
+                SettingsToggle(
+                    "End without a full stop",
+                    subtitle: "Say \u{201C}точка\u{201D} or \u{201C}period\u{201D} when you want one. With text after the cursor there is never one.",
+                    isOn: $appState.settings.endsWithoutFullStop
+                )
+            }
+
             SettingsSection("Filler words", footer: "Separate words with commas. A word goes only where it stands apart, at the start of a phrase or between commas, so \u{201C}что-то типа этого\u{201D} stays. Sounds like \u{201C}э\u{201D}, \u{201C}ммм\u{201D}, \u{201C}uh\u{201D} and \u{201C}um\u{201D} always go.") {
                 SettingsToggle(
                     "Remove filler words",
@@ -51,6 +65,39 @@ struct TextRulesSettingsPane: View {
                     "Write spoken punctuation",
                     subtitle: "\u{201C}Привет, запятая, как дела, вопросительный знак\u{201D} becomes \u{201C}Привет, как дела?\u{201D}",
                     isOn: $appState.settings.writesSpokenPunctuation
+                )
+            }
+
+            SettingsSection("Dictionary", footer: "Words and names the recogniser gets wrong, written your way. Case and \u{201C}ё\u{201D} don't matter.") {
+                ForEach($appState.settings.wordReplacements) { $replacement in
+                    HStack(spacing: 10) {
+                        TextField("Heard", text: $replacement.heard, prompt: Text("флоу тайп"))
+                        Image(systemName: "arrow.right")
+                            .foregroundStyle(.secondary)
+                        TextField("Written", text: $replacement.written, prompt: Text("Flow Type"))
+                        Button {
+                            appState.settings.wordReplacements.removeAll { $0.id == replacement.id }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Remove")
+                    }
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+                }
+
+                Button("Add Word") {
+                    appState.settings.wordReplacements.append(WordReplacement())
+                }
+            }
+
+            SettingsSection("Voice commands") {
+                SettingsToggle(
+                    "Take back the last dictation",
+                    subtitle: "Say \u{201C}отмени\u{201D}, \u{201C}удали последнее\u{201D} or \u{201C}undo that\u{201D} right after a dictation, while the cursor is still after it.",
+                    isOn: $appState.settings.undoesByVoice
                 )
             }
         }

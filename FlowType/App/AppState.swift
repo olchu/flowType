@@ -34,6 +34,21 @@ final class AppState: ObservableObject {
             }
         }
     }
+    /// Kept in the Keychain rather than the settings: they hold addresses
+    /// and phone numbers.
+    @Published var snippets: [Snippet] = [] {
+        didSet {
+            guard snippets != oldValue else { return }
+            // Once typing pauses, not on every key.
+            snippetsSave?.cancel()
+            snippetsSave = Task { [snippets] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
+                Keychain.set(try? JSONEncoder().encode(snippets), for: Self.snippetsAccount)
+            }
+        }
+    }
+    let history = DictationHistory()
     @Published var lastErrorMessage: String?
     @Published private(set) var isHotkeyRunning = false
     /// While the user drags the indicator to where it should appear.
@@ -63,7 +78,7 @@ final class AppState: ObservableObject {
     private let transcriptionService = TranscriptionService()
     private let transcriptCleanupService = TranscriptCleanupService()
     private let speechDetector = SpeechDetectionService()
-    private let pasteService = PasteService()
+    private let textInserter = TextInserter()
     private let modelStorageService = ModelStorageService()
     private let settingsStorageService = SettingsStorageService()
     private let loginItemService = LoginItemService()
@@ -75,9 +90,14 @@ final class AppState: ObservableObject {
     /// The last transcript, kept in memory only, so ⌃⌥V can paste it again
     /// when the original paste went nowhere.
     private var lastTranscript: String?
-    /// While a ⌃⌥V paste waits for the keys to be let go and pastes, so a
-    /// second press doesn't start another one on top of it.
-    private var isPastingLastTranscript = false
+    /// While an earlier dictation is pasted again, by ⌃⌥V or from the
+    /// history, so a second request doesn't start another paste on top.
+    private var isPasting = false
+    private var snippetsSave: Task<Void, Never>?
+    /// The app in front before Flow Type's own windows, where a paste from
+    /// the history goes.
+    private var lastActiveApplication = NSWorkspace.shared.frontmostApplication
+    private var applicationActivation: AnyCancellable?
     private var streamingTranscriptionTask: Task<Void, Never>?
     /// Processing of the last dictation, or the stream shutdown of a cancelled
     /// one. The next dictation's stream waits for it: the stream and the final
@@ -109,6 +129,12 @@ final class AppState: ObservableObject {
 
     init() {
         settings = settingsStorageService.load()
+        snippets = Keychain.data(for: Self.snippetsAccount).flatMap { try? JSONDecoder().decode([Snippet].self, from: $0) } ?? []
+        applicationActivation = NSWorkspace.shared.notificationCenter
+            .publisher(for: NSWorkspace.didActivateApplicationNotification)
+            .compactMap { $0.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication }
+            .filter { $0.bundleIdentifier != Bundle.main.bundleIdentifier }
+            .sink { [weak self] in self?.lastActiveApplication = $0 }
         floatingIndicatorController.placement = settings.indicatorPosition
         hasCompletedOnboarding = settingsStorageService.hasCompletedOnboarding()
         audioRecorder.onLevelChanged = { [weak self] level, bands in
@@ -180,7 +206,7 @@ final class AppState: ObservableObject {
 
     func startDictation() {
         // Not while ⌃⌥V is pasting: its ⌘V would land in the dictation.
-        guard canStartRecording, !isPastingLastTranscript else { return }
+        guard canStartRecording, !isPasting else { return }
 
         lastErrorMessage = nil
         audioLevel = 0
@@ -294,11 +320,29 @@ final class AppState: ObservableObject {
             timing.mark("final transcript ready chars=\(rawTranscript.count)")
             if isCancelled() { return }
 
+            // A dictation of nothing but a command: a snippet, pasted as
+            // written, or «отмени». Before the cleanup, which could reword it.
+            let spoken = TranscriptText.clean(rawTranscript)
+            if let snippet = snippets.first(where: { $0.triggers.contains { PhraseReplacements.isWhole(spoken, phrase: $0) } }) {
+                await deliver(snippet.text, fitting: .spacesOnly, timing: timing)
+                return
+            }
+            if settings.undoesByVoice && Self.undoCommands.contains(where: { PhraseReplacements.isWhole(spoken, phrase: $0) }) {
+                if textInserter.undo() {
+                    playFeedback(.pasted)
+                } else {
+                    beep()
+                }
+                status = .ready
+                timing.finish("undo")
+                return
+            }
+
             let cleanupResult = await transcriptCleanupService.clean(
                 rawTranscript,
                 mode: settings.cleanupMode,
                 model: settings.cleanupModel,
-                rules: settings.textRules
+                rules: settings.textRules(snippets: snippets)
             )
             let transcript = cleanupResult.text
             timing.mark(
@@ -306,44 +350,61 @@ final class AppState: ObservableObject {
             )
 
             if isCancelled() { return }
-            isDeliveringTranscript = true
-            // Cleared on the way out, after the status has left .transcribing,
-            // so Escape isn't intercepted again in between.
-            defer { isDeliveringTranscript = false }
-
-            guard !transcript.isEmpty else {
-                status = .ready
-                timing.finish("empty transcript")
-                return
-            }
-
-            lastTranscript = transcript
-
-            if settings.autoPaste {
-                do {
-                    try await pasteService.pasteText(
-                        transcript,
-                        restoreClipboard: settings.restoreClipboard,
-                        into: dictationTargetApplication
-                    )
-                    timing.mark("paste completed")
-                    playFeedback(.pasted)
-                } catch {
-                    showError(error)
-                    timing.finish("paste failed")
-                    return
-                }
-            } else {
-                pasteService.copyText(transcript)
-                timing.mark("copied to clipboard")
-            }
-
-            // Before .ready, so the confirmation is already up and the ready
-            // status doesn't start a dismissal.
-            floatingIndicatorController.showPasted()
-            status = .ready
-            timing.finish("ready")
+            await deliver(transcript, fitting: settings.fitsTextAroundCursor ? .full : .none, timing: timing)
         }
+    }
+
+    /// Pastes or copies a dictation's text, and keeps it for ⌃⌥V and the
+    /// history.
+    private func deliver(_ transcript: String, fitting: TextInserter.Fitting, timing: DictationTiming) async {
+        isDeliveringTranscript = true
+        // Cleared on the way out, after the status has left .transcribing,
+        // so Escape isn't intercepted again in between.
+        defer { isDeliveringTranscript = false }
+
+        guard !transcript.isEmpty else {
+            status = .ready
+            timing.finish("empty transcript")
+            return
+        }
+
+        lastTranscript = transcript
+        var pasteError: Error?
+        if settings.autoPaste {
+            do {
+                try await textInserter.paste(
+                    transcript,
+                    into: dictationTargetApplication,
+                    restoreClipboard: settings.restoreClipboard,
+                    fitting: fitting,
+                    keptSpellings: keptSpellings
+                )
+                timing.mark("paste completed")
+            } catch {
+                pasteError = error
+            }
+        } else {
+            textInserter.copy(transcript)
+            timing.mark("copied to clipboard")
+        }
+        // After the paste, so writing it doesn't hold the text up.
+        if settings.keepsHistory {
+            history.add(transcript, appName: dictationTargetApplication?.localizedName)
+        }
+
+        if let pasteError {
+            showError(pasteError)
+            timing.finish("paste failed")
+            return
+        }
+        if settings.autoPaste {
+            playFeedback(.pasted)
+        }
+        // Before .ready, so the confirmation is already up and the ready
+        // status doesn't start a dismissal.
+        floatingIndicatorController.showPasted()
+        status = .ready
+        timing.finish("ready")
     }
 
     private func finalTranscript(
@@ -676,7 +737,10 @@ final class AppState: ObservableObject {
     }
 
     func resetSettingsToDefaults() {
-        settings = AppSettings()
+        var defaults = AppSettings()
+        // The dictionary is the user's own words, not a setting.
+        defaults.wordReplacements = settings.wordReplacements
+        settings = defaults
     }
 
     func showOnboardingIfNeeded() {
@@ -712,6 +776,10 @@ final class AppState: ObservableObject {
             self?.pasteLastTranscript()
         }
 
+        hotkeyService.onUserInput = { [weak self] in
+            self?.textInserter.forgetLastInsertion()
+        }
+
         do {
             try hotkeyService.start()
             isHotkeyRunning = true
@@ -724,37 +792,70 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Pastes the last transcript into the focused field again. It pastes
-    /// even with automatic paste off: pressing ⌃⌥V asks for exactly that.
     private func pasteLastTranscript() {
-        guard status != .recording, status != .transcribing, !isPastingLastTranscript else {
+        guard status != .recording, status != .transcribing else { return }
+        guard let transcript = lastTranscript else {
+            beep()
             return
         }
-        guard let transcript = lastTranscript else {
-            if settings.playsSounds {
-                NSSound.beep()
-            }
+        pasteAgain(transcript, into: NSWorkspace.shared.frontmostApplication)
+    }
+
+    /// Into the app that was in front before the history window.
+    func pasteFromHistory(_ entry: HistoryEntry) {
+        pasteAgain(entry.text, into: lastActiveApplication)
+    }
+
+    func copy(_ text: String) {
+        textInserter.copy(text)
+    }
+
+    /// Pastes an earlier dictation. It pastes even with automatic paste off:
+    /// asking for it asks for exactly that.
+    private func pasteAgain(_ text: String, into application: NSRunningApplication?) {
+        guard status != .recording, status != .transcribing, !isPasting else { return }
+        guard let application else {
+            beep()
             return
         }
 
-        isPastingLastTranscript = true
+        isPasting = true
         Task {
-            defer { isPastingLastTranscript = false }
+            defer { isPasting = false }
             do {
-                try await pasteService.pasteText(
-                    transcript,
+                try await textInserter.paste(
+                    text,
+                    into: application,
                     restoreClipboard: settings.restoreClipboard,
-                    into: NSWorkspace.shared.frontmostApplication
+                    fitting: settings.fitsTextAroundCursor ? .full : .none,
+                    keptSpellings: keptSpellings
                 )
             } catch {
                 showError(error)
                 return
             }
             playFeedback(.pasted)
-            // The paste that failed has been made good.
+            // A paste that failed has been made good.
             if status == .error {
                 clearError()
             }
+        }
+    }
+
+    private var keptSpellings: [String] {
+        settings.wordReplacements.map(\.written) + snippets.map(\.text)
+    }
+
+    private static let snippetsAccount = "snippets"
+
+    private static let undoCommands = [
+        "отмени", "отмени это", "отмени последнее", "удали последнее", "удали это",
+        "undo", "undo that", "delete that", "scratch that",
+    ]
+
+    private func beep() {
+        if settings.playsSounds {
+            NSSound.beep()
         }
     }
 

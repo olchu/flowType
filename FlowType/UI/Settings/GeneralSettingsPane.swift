@@ -2,8 +2,10 @@ import AppKit
 import SwiftUI
 
 struct GeneralSettingsPane: View {
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var appState: AppState
     @State private var isConfirmingReset = false
+    @State private var isConfirmingClearHistory = false
 
     var body: some View {
         SettingsPage(.general) {
@@ -52,6 +54,27 @@ struct GeneralSettingsPane: View {
                 .disabled(!appState.settings.autoPaste)
             }
 
+            SettingsSection("History", footer: "The last 100 dictations from the past week, encrypted on this Mac with a key kept in the Keychain. Audio is never saved.") {
+                SettingsToggle(
+                    "Keep history",
+                    subtitle: "Search past dictations and paste one again in a click.",
+                    isOn: $appState.settings.keepsHistory
+                )
+
+                SettingsRow("Dictations") {
+                    HStack(spacing: 8) {
+                        Button("Clear…", role: .destructive) {
+                            isConfirmingClearHistory = true
+                        }
+
+                        Button("Open History") {
+                            openWindow(id: "history")
+                        }
+                        .buttonStyle(.settingsProminent)
+                    }
+                }
+            }
+
             SettingsSection("Startup") {
                 SettingsToggle(
                     "Open at login",
@@ -80,8 +103,9 @@ struct GeneralSettingsPane: View {
                 appState.resetSettingsToDefaults()
             }
         } message: {
-            Text("Profile, language, cleanup, text rules, paste, indicator and sound settings go back to their defaults.")
+            Text("Profile, language, cleanup, text rules, paste, indicator and sound settings go back to their defaults. Your dictionary, snippets and history are kept.")
         }
+        .clearHistoryConfirmation(isPresented: $isConfirmingClearHistory, history: appState.history)
     }
 
     private var appVersion: String {

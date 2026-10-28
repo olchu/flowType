@@ -198,26 +198,11 @@ nonisolated enum VoicePunctuation {
         case capitalized
         case lowercased
 
-        /// Leaves words with capitals of their own alone: "iPhone", "NASA",
-        /// and "I" when lowercasing.
         func applied(to word: String) -> String {
             switch self {
-            case .capitalized:
-                return TranscriptText.capitalizingFirstLetter(word)
-            case .lowercased:
-                guard let index = word.firstIndex(where: \.isLetter) else { return word }
-                let rest = word[word.index(after: index)...]
-                guard word[index].isUppercase,
-                      !rest.contains(where: \.isUppercase),
-                      rest.contains(where: \.isLowercase),
-                      !VoicePunctuation.englishI.contains(TranscriptText.comparableWord(word))
-                else {
-                    return word
-                }
-                return word.replacingCharacters(in: index...index, with: word[index].lowercased())
+            case .capitalized: TranscriptText.capitalizingFirstLetter(word)
+            case .lowercased: TranscriptText.lowercasingFirstLetter(word)
             }
         }
     }
-
-    private static let englishI: Set<String> = ["i'm", "i've", "i'll", "i'd"]
 }

@@ -35,6 +35,9 @@ final class HotkeyService {
     var onEscape: (() -> Void)?
     /// ⌃⌥V, for pasting the last dictation again.
     var onPasteLast: (() -> Void)?
+    /// A key or a mouse button the user pressed, not one Flow Type posted:
+    /// the cursor may have moved away from the last dictation.
+    var onUserInput: (() -> Void)?
 
     var isPasteLastHotKeyRegistered: Bool {
         pasteLastHotKey != nil
@@ -72,8 +75,9 @@ final class HotkeyService {
     func start() throws {
         guard fnTap == nil else { return }
 
+        let userInput: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
         guard let fnTap = makeTap(
-            events: 1 << CGEventType.flagsChanged.rawValue,
+            events: userInput.reduce(1 << CGEventType.flagsChanged.rawValue) { $0 | 1 << $1.rawValue },
             options: .listenOnly,
             callback: { _, type, event, userInfo in
                 if let service = HotkeyService.service(from: userInfo) {
@@ -109,6 +113,7 @@ final class HotkeyService {
         onKeyUp = nil
         onEscape = nil
         onPasteLast = nil
+        onUserInput = nil
     }
 
     /// Without it the rest of the hotkeys still work, so a failure here, for
@@ -144,6 +149,10 @@ final class HotkeyService {
         switch type {
         case .flagsChanged:
             updateFnState(isFnPressed: event.flags.contains(.maskSecondaryFn))
+        case .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            if event.getIntegerValueField(.eventSourceUserData) != PasteService.syntheticEventMarker {
+                onUserInput?()
+            }
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             // The system switches the tap off when the main thread stalls past
             // the tap timeout. It stays off until re-enabled, which would

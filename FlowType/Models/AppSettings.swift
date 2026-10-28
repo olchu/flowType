@@ -111,6 +111,14 @@ struct AppSettings: Codable, Equatable {
     var writesNumbersAsDigits = true
     var keepsSmallNumbersAsWords = true
     var writesSpokenPunctuation = true
+    var endsWithoutFullStop = true
+    var wordReplacements: [WordReplacement] = []
+    /// Starts with a small letter after a word, adds the space between, and
+    /// so on, from the text around the cursor.
+    var fitsTextAroundCursor = true
+    /// Saying "отмени" right after a dictation takes it back.
+    var undoesByVoice = true
+    var keepsHistory = true
     var autoPaste = true
     var restoreClipboard = true
     var microphoneSensitivity = 0.5
@@ -127,13 +135,16 @@ struct AppSettings: Codable, Equatable {
 
     init() {}
 
-    var textRules: TextRules {
+    func textRules(snippets: [Snippet]) -> TextRules {
         TextRules(
             removesFillerWords: removesFillerWords,
             fillerWords: fillerWords,
             writesNumbersAsDigits: writesNumbersAsDigits,
             keepsSmallNumbersAsWords: keepsSmallNumbersAsWords,
-            writesSpokenPunctuation: writesSpokenPunctuation
+            writesSpokenPunctuation: writesSpokenPunctuation,
+            endsWithoutFullStop: endsWithoutFullStop,
+            wordReplacements: wordReplacements,
+            snippets: snippets
         )
     }
 
@@ -154,6 +165,11 @@ struct AppSettings: Codable, Equatable {
         writesNumbersAsDigits = try container.decodeIfPresent(Bool.self, forKey: .writesNumbersAsDigits) ?? defaults.writesNumbersAsDigits
         keepsSmallNumbersAsWords = try container.decodeIfPresent(Bool.self, forKey: .keepsSmallNumbersAsWords) ?? defaults.keepsSmallNumbersAsWords
         writesSpokenPunctuation = try container.decodeIfPresent(Bool.self, forKey: .writesSpokenPunctuation) ?? defaults.writesSpokenPunctuation
+        endsWithoutFullStop = try container.decodeIfPresent(Bool.self, forKey: .endsWithoutFullStop) ?? defaults.endsWithoutFullStop
+        wordReplacements = (try? container.decodeIfPresent([WordReplacement].self, forKey: .wordReplacements)) ?? defaults.wordReplacements
+        fitsTextAroundCursor = try container.decodeIfPresent(Bool.self, forKey: .fitsTextAroundCursor) ?? defaults.fitsTextAroundCursor
+        undoesByVoice = try container.decodeIfPresent(Bool.self, forKey: .undoesByVoice) ?? defaults.undoesByVoice
+        keepsHistory = try container.decodeIfPresent(Bool.self, forKey: .keepsHistory) ?? defaults.keepsHistory
         autoPaste = try container.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? defaults.autoPaste
         restoreClipboard = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? defaults.restoreClipboard
         microphoneSensitivity = try container.decodeIfPresent(Double.self, forKey: .microphoneSensitivity) ?? defaults.microphoneSensitivity

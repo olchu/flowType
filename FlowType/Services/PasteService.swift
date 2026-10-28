@@ -36,6 +36,10 @@ final class PasteService {
     /// when ⌘V went nowhere or a clipboard manager read it before the paste.
     private static let restoreTimeout: Duration = .seconds(5)
 
+    /// Set on every key event Flow Type posts, so listening for the
+    /// user's own typing can tell them apart.
+    nonisolated static let syntheticEventMarker: Int64 = 0x464C_5459
+
     private let pasteboard = NSPasteboard.general
     private var pendingRestore: PendingRestore?
 
@@ -189,7 +193,8 @@ final class PasteService {
         snapshot.restore(to: pasteboard)
     }
 
-    private func activate(_ application: NSRunningApplication?) async {
+    /// Brings `application` to the front unless it already is.
+    func activate(_ application: NSRunningApplication?) async {
         guard
             let application,
             !application.isTerminated,
@@ -228,16 +233,11 @@ final class PasteService {
     private func pasteUsingApplicationMenu(_ application: NSRunningApplication?) -> Bool {
         guard let application else { return false }
 
-        let applicationElement = AXUIElementCreateApplication(application.processIdentifier)
         guard
-            let menuBar = elementAttribute(kAXMenuBarAttribute, of: applicationElement),
-            let editMenuBarItem = childElements(of: menuBar).first(where: {
-                stringAttribute(kAXTitleAttribute, of: $0) == "Edit"
-            }),
-            let editMenu = childElements(of: editMenuBarItem).first,
-            let pasteMenuItem = childElements(of: editMenu).first(where: {
-                stringAttribute(kAXTitleAttribute, of: $0) == "Paste"
-            })
+            let menuBar = AXUIElementCreateApplication(application.processIdentifier).element(kAXMenuBarAttribute),
+            let editMenuBarItem = menuBar.children.first(where: { $0.string(kAXTitleAttribute) == "Edit" }),
+            let editMenu = editMenuBarItem.children.first,
+            let pasteMenuItem = editMenu.children.first(where: { $0.string(kAXTitleAttribute) == "Paste" })
         else {
             return false
         }
@@ -245,59 +245,8 @@ final class PasteService {
         return AXUIElementPerformAction(pasteMenuItem, kAXPressAction as CFString) == .success
     }
 
-    private func elementAttribute(_ attribute: String, of element: AXUIElement) -> AXUIElement? {
-        var value: CFTypeRef?
-        guard
-            AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
-            let value,
-            CFGetTypeID(value) == AXUIElementGetTypeID()
-        else {
-            return nil
-        }
-
-        return unsafeBitCast(value, to: AXUIElement.self)
-    }
-
-    private func childElements(of element: AXUIElement) -> [AXUIElement] {
-        var value: CFTypeRef?
-        guard
-            AXUIElementCopyAttributeValue(
-                element,
-                kAXChildrenAttribute as CFString,
-                &value
-            ) == .success,
-            let children = value as? [AXUIElement]
-        else {
-            return []
-        }
-
-        return children
-    }
-
-    private func stringAttribute(_ attribute: String, of element: AXUIElement) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
-            return nil
-        }
-
-        return value as? String
-    }
-
     private func insertTextUsingAccessibility(_ text: String) -> Bool {
-        guard let focusedElement = elementAttribute(
-            kAXFocusedUIElementAttribute,
-            of: AXUIElementCreateSystemWide()
-        ) else {
-            return false
-        }
-
-        let result = AXUIElementSetAttributeValue(
-            focusedElement,
-            kAXSelectedTextAttribute as CFString,
-            text as CFTypeRef
-        )
-
-        return result == .success
+        AXUIElement.focused(in: nil)?.replaceSelection(with: text) ?? false
     }
 
     private func copyToClipboard(_ text: String) {
@@ -306,18 +255,30 @@ final class PasteService {
     }
 
     private func sendPasteCommand() throws {
+        try postKey(0x09, flags: .maskCommand)
+    }
+
+    /// Presses Backspace `count` times in the focused app.
+    func deleteBackward(count: Int) throws {
+        for _ in 0..<count {
+            try postKey(0x33, flags: [])
+        }
+    }
+
+    private func postKey(_ virtualKey: CGKeyCode, flags: CGEventFlags) throws {
         let source = CGEventSource(stateID: .combinedSessionState)
         guard
-            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
-            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true),
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false)
         else {
             throw PasteError.eventCreationFailed
         }
 
-        keyDown.flags = .maskCommand
-        keyUp.flags = .maskCommand
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        for event in [keyDown, keyUp] {
+            event.flags = flags
+            event.setIntegerValueField(.eventSourceUserData, value: Self.syntheticEventMarker)
+            event.post(tap: .cghidEventTap)
+        }
     }
 
     private func sendParallelsPasteCommand() throws {
@@ -335,6 +296,9 @@ final class PasteService {
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
         commandUp.flags = []
+        for event in [commandDown, keyDown, keyUp, commandUp] {
+            event.setIntegerValueField(.eventSourceUserData, value: Self.syntheticEventMarker)
+        }
 
         // Parallels forwards physical key transitions to the guest. A V event
         // carrying only maskCommand loses the modifier and types a literal V.

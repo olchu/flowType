@@ -185,6 +185,21 @@ enum TranscriptText {
         return text.replacingCharacters(in: index...index, with: text[index].uppercased())
     }
 
+    /// For a word that took a capital only for starting a sentence:
+    /// "Привет" → "привет". Leaves "iPhone", "NASA", "I" and "I'm" alone.
+    nonisolated static func lowercasingFirstLetter(_ word: String) -> String {
+        guard let index = word.firstIndex(where: \.isLetter) else { return word }
+        let rest = word[word.index(after: index)...]
+        guard word[index].isUppercase,
+              !rest.contains(where: \.isUppercase),
+              rest.contains(where: \.isLowercase),
+              !["i'm", "i've", "i'll", "i'd"].contains(comparableWord(word))
+        else {
+            return word
+        }
+        return word.replacingCharacters(in: index...index, with: word[index].lowercased())
+    }
+
     nonisolated private static func isTerminalPunctuation(_ character: Character) -> Bool {
         character == "." || character == "!" || character == "?"
     }
