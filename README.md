@@ -109,7 +109,7 @@ The indicator doesn't mistake the start cue for your voice. With sounds off, the
   <img src="Docs/images/settings.png" alt="The Settings window with the Models and Indicator panes" width="100%">
 </p>
 
-The menu shows the current status, model loading progress, and the CPU and memory FlowType is using. Settings live in one window with a sidebar, the way System Settings does it:
+The menu shows the current status and model loading progress, and switches the indicator style. Settings live in one window with a sidebar, the way System Settings does it:
 
 - General: hotkey, auto-paste and clipboard restore, open at login, reset settings.
 - Permissions: microphone and Accessibility. Changes you make in System Settings are picked up automatically.

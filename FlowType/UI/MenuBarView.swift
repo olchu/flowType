@@ -30,12 +30,13 @@ struct MenuBarView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 6) {
-                Label("CPU: \(appState.resourceUsage.formattedCPU)", systemImage: "cpu")
-                Label("Memory: \(appState.resourceUsage.formattedMemory)", systemImage: "memorychip")
+            Picker(selection: $appState.settings.indicatorStyle) {
+                ForEach(IndicatorStyle.allCases) { style in
+                    Text(style.rawValue)
+                }
+            } label: {
+                Label(SettingsPane.indicator.title, systemImage: SettingsPane.indicator.systemImage)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
 
             Divider()
 

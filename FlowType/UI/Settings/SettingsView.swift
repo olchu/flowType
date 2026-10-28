@@ -122,14 +122,13 @@ struct SettingsView: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Settings")
         }
-        .safeAreaInset(edge: .bottom, alignment: .leading) {
+        .safeAreaInset(edge: .bottom) {
             // The author's mark, dark in light and inverted in dark.
             Image("OlchuLogo")
                 .resizable()
                 .scaledToFit()
                 .frame(height: 18)
                 .foregroundStyle(.primary.opacity(0.85))
-                .padding(.leading, 22)
                 .padding(.bottom, 18)
                 .accessibilityLabel("olchu")
         }

@@ -188,8 +188,13 @@ final class FloatingIndicatorController {
 
         // Centred where the user placed it, even if the frame's transparent
         // margin runs off the screen: that is how the drawing gets into a
-        // corner. Above the Dock if that screen is gone.
-        if let centre = placement, NSScreen.screens.contains(where: { $0.frame.contains(centre) }) {
+        // corner. Above the Dock if that screen is gone. The edges count:
+        // the centre is kept on them when dragged past, and `contains`
+        // leaves the top and right ones out.
+        if let centre = placement, NSScreen.screens.contains(where: { screen in
+            (screen.frame.minX...screen.frame.maxX).contains(centre.x)
+                && (screen.frame.minY...screen.frame.maxY).contains(centre.y)
+        }) {
             panel.setFrame(NSRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height), display: true)
             return
         }

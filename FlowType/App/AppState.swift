@@ -51,7 +51,6 @@ final class AppState: ObservableObject {
     @Published private(set) var modelWarmupMessage = "Model is not loaded yet."
     @Published private(set) var modelLoadingProgress: Double = 0
     @Published private(set) var modelStorageStates: [TranscriptionModel: ModelStorageState] = [:]
-    @Published private(set) var resourceUsage = ProcessResourceUsage()
     private var hasCompletedOnboarding = false
     @Published private(set) var isLaunchAtLoginEnabled = false
     @Published private(set) var launchAtLoginStatusMessage = "Disabled"
@@ -67,7 +66,6 @@ final class AppState: ObservableObject {
     private let pasteService = PasteService()
     private let modelStorageService = ModelStorageService()
     private let settingsStorageService = SettingsStorageService()
-    private let resourceMonitorService = ProcessResourceMonitorService()
     private let loginItemService = LoginItemService()
     private let floatingIndicatorController = FloatingIndicatorController()
     private let feedbackSoundPlayer = FeedbackSoundPlayer()
@@ -80,7 +78,6 @@ final class AppState: ObservableObject {
     /// While a ⌃⌥V paste waits for the keys to be let go and pastes, so a
     /// second press doesn't start another one on top of it.
     private var isPastingLastTranscript = false
-    private var resourceUsageTask: Task<Void, Never>?
     private var streamingTranscriptionTask: Task<Void, Never>?
     /// Processing of the last dictation, or the stream shutdown of a cancelled
     /// one. The next dictation's stream waits for it: the stream and the final
@@ -128,7 +125,6 @@ final class AppState: ObservableObject {
         if settings.cleanupMode == .localLLM {
             prewarmTranscriptCleanupModel()
         }
-        startResourceUsageMonitoring()
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
             self?.showOnboardingIfNeeded()
@@ -136,7 +132,6 @@ final class AppState: ObservableObject {
     }
 
     deinit {
-        resourceUsageTask?.cancel()
         streamingTranscriptionTask?.cancel()
     }
 
@@ -656,10 +651,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    func refreshResourceUsage() {
-        resourceUsage = resourceMonitorService.currentUsage()
-    }
-
     func refreshLaunchAtLoginStatus() {
         isLaunchAtLoginEnabled = loginItemService.isEnabled
         launchAtLoginStatusMessage = loginItemService.statusDescription
@@ -770,17 +761,6 @@ final class AppState: ObservableObject {
     private func showError(_ error: Error) {
         lastErrorMessage = error.localizedDescription
         status = .error
-    }
-
-    private func startResourceUsageMonitoring() {
-        refreshResourceUsage()
-        resourceUsageTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(2))
-                guard !Task.isCancelled else { return }
-                self?.refreshResourceUsage()
-            }
-        }
     }
 
     private func updateEscapeInterception() {
