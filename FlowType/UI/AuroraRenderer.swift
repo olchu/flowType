@@ -70,12 +70,11 @@ final class AuroraRenderer {
         outputPipeline = output
     }
 
-    /// Renders one frame into `drawable`, which must be in `pixelFormat` and
-    /// of the size in `uniforms`, and presents it.
-    func render(_ uniforms: Uniforms, colors: AuroraColors, to drawable: CAMetalDrawable) {
+    /// Renders one frame into `target`, which must be in `pixelFormat` and
+    /// of the size in `uniforms`, and commits it.
+    func render(_ uniforms: Uniforms, colors: AuroraColors, to target: IndicatorRenderTarget) {
         var colors = colors
-        let target = drawable.texture
-        guard let light = lightTexture(width: target.width, height: target.height),
+        guard let light = lightTexture(width: target.texture.width, height: target.texture.height),
               let commands = queue.makeCommandBuffer()
         else {
             return
@@ -109,7 +108,7 @@ final class AuroraRenderer {
         }
 
         let outputPass = MTLRenderPassDescriptor()
-        outputPass.colorAttachments[0].texture = target
+        outputPass.colorAttachments[0].texture = target.texture
         // The output pass writes every pixel.
         outputPass.colorAttachments[0].loadAction = .dontCare
         outputPass.colorAttachments[0].storeAction = .store
@@ -121,8 +120,7 @@ final class AuroraRenderer {
             encoder.endEncoding()
         }
 
-        commands.present(drawable)
-        commands.commit()
+        target.commit(commands)
     }
 
     private func lightTexture(width: Int, height: Int) -> MTLTexture? {

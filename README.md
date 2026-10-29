@@ -94,7 +94,7 @@ Parallels Desktop gets its own handling, because it syncs the clipboard with the
 ### Recording indicator
 
 <p align="center">
-  <img src="Docs/images/indicators.png" alt="The Waves and Bars indicator styles" width="100%">
+  <img src="Docs/images/indicators.webp" alt="Waves, Dots, Particles and Aurora playing a dictation, and the Bars pill" width="100%">
 </p>
 
 Waves is a set of glowing waves that open out of an orb and react to your voice. While the text is being processed, a pulse of light travels along them, and they flash when it's pasted. They come in five colours: blue, red, yellow, green and violet. The waves are drawn with Core Animation instead of SwiftUI's Metal renderer, which keeps their GPU memory use close to zero.
@@ -208,6 +208,20 @@ You can run LLM cleanup from the command line without recording anything:
 # clean up a string and print the result, the decision and the timing
 "Flow Type.app/Contents/MacOS/Flow Type" --cleanup-transcript "so um I wanted to to say that" --cleanup-model "Qwen3.5 2B"
 ```
+
+### Updating the README images
+
+The indicator animation and the settings picture are made by scripts, so they can be redone after a change to the look:
+
+```bash
+# records Waves, Dots, Particles and Aurora off screen and builds Docs/images/indicators.webp
+scripts/record_indicators.sh
+
+# screenshots two settings panes of the installed app and builds Docs/images/settings.png
+scripts/capture_settings.sh
+```
+
+`record_indicators.sh` uses `--record-indicator`, which plays a made-up voice through one dictation at fixed steps of time and writes every frame as a PNG; see `FlowType/App/IndicatorRecorder.swift`. Both scripts need Pillow, and the first one also needs `img2webp` from `brew install webp`.
 
 ### Tuning the waves look
 

@@ -81,7 +81,7 @@ final class ParticleFieldLayerView: MetalIndicatorLayerView {
         phase += frame.elapsed
         wavePhase += frame.elapsed * (1 + 1.6 * lift)
 
-        guard let renderer = sharedRenderer, let drawable = nextDrawable() else { return }
+        guard let renderer = sharedRenderer, let target = nextTarget() else { return }
 
         let uniforms = ParticleFieldRenderer.Uniforms(
             size: SIMD2(Float(metalLayer.drawableSize.width), Float(metalLayer.drawableSize.height)),
@@ -96,7 +96,7 @@ final class ParticleFieldLayerView: MetalIndicatorLayerView {
             processing: Float(frame.scanAmount),
             scan: Float(frame.scan)
         )
-        renderer.render(uniforms, bands: frame.bands, to: drawable)
+        renderer.render(uniforms, bands: frame.bands, to: target)
     }
 }
 

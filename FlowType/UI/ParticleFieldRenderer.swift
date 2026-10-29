@@ -66,12 +66,11 @@ final class ParticleFieldRenderer {
         self.outputPipeline = outputPipeline
     }
 
-    /// Renders one frame into `drawable`, which must be in `pixelFormat` and
-    /// of the size in `uniforms`, and presents it.
+    /// Renders one frame into `target`, which must be in `pixelFormat` and
+    /// of the size in `uniforms`, and commits it.
     /// `bands` raise the field's mountains, lowest frequency first.
-    func render(_ uniforms: Uniforms, bands: SpectrumBands, to drawable: CAMetalDrawable) {
-        let target = drawable.texture
-        guard let light = lightTexture(width: target.width, height: target.height),
+    func render(_ uniforms: Uniforms, bands: SpectrumBands, to target: IndicatorRenderTarget) {
+        guard let light = lightTexture(width: target.texture.width, height: target.texture.height),
               let commands = queue.makeCommandBuffer()
         else {
             return
@@ -98,7 +97,7 @@ final class ParticleFieldRenderer {
         }
 
         let outputPass = MTLRenderPassDescriptor()
-        outputPass.colorAttachments[0].texture = target
+        outputPass.colorAttachments[0].texture = target.texture
         // The output pass writes every pixel.
         outputPass.colorAttachments[0].loadAction = .dontCare
         outputPass.colorAttachments[0].storeAction = .store
@@ -110,8 +109,7 @@ final class ParticleFieldRenderer {
             encoder.endEncoding()
         }
 
-        commands.present(drawable)
-        commands.commit()
+        target.commit(commands)
     }
 
     private func lightTexture(width: Int, height: Int) -> MTLTexture? {

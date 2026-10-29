@@ -88,7 +88,10 @@ final class WaveAppearanceStore: ObservableObject {
     }
 
     private init() {
-        appearance = UserDefaults.standard.data(forKey: Self.defaultsKey)
+        // Recordings for the README show the waves as they ship, not as
+        // tuned on this Mac.
+        let saved = LaunchArguments.recordedIndicator == nil ? UserDefaults.standard.data(forKey: Self.defaultsKey) : nil
+        appearance = saved
             .flatMap { try? JSONDecoder().decode(WaveAppearance.self, from: $0) }
             ?? WaveAppearance()
     }

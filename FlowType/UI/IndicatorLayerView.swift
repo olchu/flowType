@@ -27,9 +27,9 @@ class IndicatorLayerView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(mode: WaveEngine.Mode, presentationID: Int, isDismissing: Bool) {
+    /// `now` is the display's clock, or IndicatorRecorder's.
+    func update(mode: WaveEngine.Mode, presentationID: Int, isDismissing: Bool, at now: CFTimeInterval = CACurrentMediaTime()) {
         self.mode = mode
-        let now = CACurrentMediaTime()
 
         if presentationID != self.presentationID {
             self.presentationID = presentationID
@@ -63,6 +63,12 @@ class IndicatorLayerView: NSView {
     func didStartPresentation() {}
 
     func render(_ frame: WaveEngine.Frame) {}
+
+    /// Advances the animation to `time` and draws that frame: on every
+    /// display refresh, or at IndicatorRecorder's fixed steps.
+    func drawFrame(at time: CFTimeInterval) {
+        render(engine.advance(mode: mode, audioLevel: model.audioLevel, audioBands: model.audioBands, at: time))
+    }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
@@ -98,6 +104,6 @@ class IndicatorLayerView: NSView {
             stopDisplayLink()
             return
         }
-        render(engine.advance(mode: mode, audioLevel: model.audioLevel, audioBands: model.audioBands, at: now))
+        drawFrame(at: now)
     }
 }

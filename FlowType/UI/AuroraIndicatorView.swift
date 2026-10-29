@@ -177,7 +177,7 @@ final class AuroraLayerView: MetalIndicatorLayerView {
         // once a second.
         let breath = 1 - 0.25 * thinking + 0.05 * thought * sin(2 * .pi * 1.1 * wobble)
 
-        guard let renderer = sharedRenderer, let drawable = nextDrawable() else { return }
+        guard let renderer = sharedRenderer, let target = nextTarget() else { return }
 
         let radius = Self.sphereRadius * metalLayer.contentsScale * growth * breath * (1 + 0.25 * swell + pulse)
         let uniforms = AuroraRenderer.Uniforms(
@@ -201,7 +201,7 @@ final class AuroraLayerView: MetalIndicatorLayerView {
             // off, so the pop is felt only in the smoke breaking loose.
             glass: Float(Self.smoothstep(0.35, 0.9, growth) * (1 - Self.smoothstep(0, 0.1, burst)))
         )
-        renderer.render(uniforms, colors: colors, to: drawable)
+        renderer.render(uniforms, colors: colors, to: target)
     }
 
     /// The voice level, lifted so ordinary speech (a level of 0.05 to 0.15)

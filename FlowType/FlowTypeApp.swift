@@ -74,6 +74,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.appearance = appearance
         }
 
+        if let styleName = LaunchArguments.recordedIndicator {
+            let output = URL(filePath: LaunchArguments.recordOutput)
+            do {
+                let count = try IndicatorRecorder.record(
+                    styleName, color: LaunchArguments.indicatorColor,
+                    scale: LaunchArguments.recordScale,
+                    background: LaunchArguments.recordBackground, to: output
+                )
+                print("Wrote \(count) frames to \(output.path).")
+                NSApplication.shared.terminate(nil)
+            } catch {
+                fputs("Could not record the indicator: \(error.localizedDescription)\n", stderr)
+                exit(EXIT_FAILURE)
+            }
+            return
+        }
+
         if let transcript = LaunchArguments.cleanupTranscript {
             Task {
                 let service = TranscriptCleanupService()
