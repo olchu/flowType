@@ -168,7 +168,7 @@ struct WaveTunerView: View {
                     }
                 }
             } footer: {
-                Text("Changes are saved and used by the real indicator. Hold Fn over any window to check them.")
+                Text("Changes are saved and used by the real indicator. Hold the hotkey over any window to check them.")
             }
         }
         .formStyle(.grouped)

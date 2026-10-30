@@ -9,10 +9,22 @@ struct GeneralSettingsPane: View {
 
     var body: some View {
         SettingsPage(.general) {
-            SettingsSection("Hotkey", footer: "Hold Fn while you speak and release it to paste the text. If it went nowhere, put the cursor where it belongs and press ⌃⌥V to paste it again.") {
+            SettingsSection("Hotkey", footer: "Hold the key while you speak and release it to paste the text. If it went nowhere, put the cursor where it belongs and press ⌃⌥V to paste it again.") {
                 SettingsRow("Hold to dictate") {
-                    KeyCap(label: "fn")
+                    Picker("Hold to dictate", selection: $appState.settings.dictationKey) {
+                        ForEach(DictationKey.allCases) { key in
+                            Text(key.rawValue).tag(key)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
                 }
+
+                SettingsToggle(
+                    "Double-press for hands-free",
+                    subtitle: "Keeps recording after you let go, until you press the key once more. Esc cancels.",
+                    isOn: $appState.settings.handsFreeByDoublePress
+                )
 
                 SettingsRow("Paste last dictation") {
                     if appState.isHotkeyRunning && !appState.isPasteLastHotKeyAvailable {
@@ -36,6 +48,22 @@ struct GeneralSettingsPane: View {
                             appState.restartHotkey()
                         }
                     }
+                }
+            }
+
+            SettingsSection("Microphone", footer: "Follows the system's microphone unless you choose one. A chosen microphone that isn't connected gives way to the system's until it's back.") {
+                SettingsRow("Input") {
+                    Picker("Input", selection: $appState.settings.microphoneUID) {
+                        Text("System Default").tag(String?.none)
+                        ForEach(appState.microphones) { microphone in
+                            Text(microphone.name).tag(String?.some(microphone.uid))
+                        }
+                        if let uid = appState.settings.microphoneUID, !appState.microphones.contains(where: { $0.uid == uid }) {
+                            Text("Not connected").tag(String?.some(uid))
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
                 }
             }
 
@@ -103,7 +131,7 @@ struct GeneralSettingsPane: View {
                 appState.resetSettingsToDefaults()
             }
         } message: {
-            Text("Profile, language, cleanup, text rules, paste, indicator and sound settings go back to their defaults. Your dictionary, snippets and history are kept.")
+            Text("Hotkey, microphone, profile, language, cleanup, text rules, paste, indicator and sound settings go back to their defaults. Your dictionary, snippets and history are kept.")
         }
         .clearHistoryConfirmation(isPresented: $isConfirmingClearHistory, history: appState.history)
     }

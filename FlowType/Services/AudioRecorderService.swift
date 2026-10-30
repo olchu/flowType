@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 import Foundation
 
@@ -25,14 +26,21 @@ final class AudioRecorderService {
     /// SpectrumAnalyzer.
     var onLevelChanged: ((Double, SpectrumBands) -> Void)?
 
-    func startRecording() throws {
+    /// Records from `inputDeviceID`, or from the system's microphone.
+    func startRecording(inputDeviceID: AudioDeviceID?) throws {
         guard !isRecording else {
             throw AudioRecorderError.alreadyRecording
         }
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
+        if let inputDeviceID {
+            Self.select(inputDeviceID, for: inputNode)
+        }
+        // Not outputFormat: it stays on the system's microphone after
+        // selecting another, and a tap in a rate the device doesn't run at
+        // gets no audio at all.
+        let format = inputNode.inputFormat(forBus: 0)
 
         guard format.channelCount > 0 else {
             throw AudioRecorderError.noInputDevice
@@ -96,6 +104,17 @@ final class AudioRecorderService {
     private func appendSamples(_ newSamples: [Float], level: Double, bands: SpectrumBands) {
         samples.append(contentsOf: newSamples)
         onLevelChanged?(level, bands)
+    }
+
+    /// A device that can't be selected leaves the node on the system's
+    /// microphone, which beats not recording at all.
+    private static func select(_ deviceID: AudioDeviceID, for inputNode: AVAudioInputNode) {
+        guard let audioUnit = inputNode.audioUnit else { return }
+        var deviceID = deviceID
+        AudioUnitSetProperty(
+            audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+            &deviceID, UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
     }
 
     nonisolated private static func level(sumSquares: Float, frameCount: Int) -> Double {

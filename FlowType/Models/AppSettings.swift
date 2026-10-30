@@ -12,7 +12,7 @@ enum TranscriptionFinalizationMode: String, Codable, CaseIterable, Identifiable 
         case .streamTail:
             "Current mode. Keeps confirmed streaming text and re-decodes only the unconfirmed ending."
         case .fullRecording:
-            "Baseline mode. Transcribes the whole recording after you release Fn."
+            "Baseline mode. Transcribes the whole recording after you release the hotkey."
         case .streamOnly:
             "Fastest mode. Uses only streaming text, so the final words may be less reliable."
         }
@@ -70,6 +70,18 @@ enum IndicatorStyle: String, Codable, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+/// The key held to dictate. Modifiers only: they can be held like Fn, and
+/// typing never presses one alone. The right-hand ones are rarely used for
+/// shortcuts.
+enum DictationKey: String, Codable, CaseIterable, Identifiable {
+    case fn = "Fn"
+    case rightOption = "Right Option"
+    case rightCommand = "Right Command"
+    case rightControl = "Right Control"
+
+    var id: Self { self }
+}
+
 /// Colours of the aurora indicator's smoke and glass; the colours live in
 /// AuroraIndicatorView.
 enum AuroraPalette: String, Codable, CaseIterable, Identifiable {
@@ -119,8 +131,15 @@ struct AppSettings: Codable, Equatable {
     /// Saying "отмени" right after a dictation takes it back.
     var undoesByVoice = true
     var keepsHistory = true
+    var dictationKey: DictationKey = .fn
+    /// Double-pressing the key keeps recording until it is pressed again.
+    var handsFreeByDoublePress = true
     var autoPaste = true
     var restoreClipboard = true
+    /// The chosen microphone's `AudioInputDevice.uid`; nil follows the
+    /// system's. Kept while the microphone is unplugged, so it is used again
+    /// when it comes back.
+    var microphoneUID: String?
     var microphoneSensitivity = 0.5
     var indicatorStyle: IndicatorStyle = .bars
     var waveColor: WaveColor = .blue
@@ -170,8 +189,11 @@ struct AppSettings: Codable, Equatable {
         fitsTextAroundCursor = try container.decodeIfPresent(Bool.self, forKey: .fitsTextAroundCursor) ?? defaults.fitsTextAroundCursor
         undoesByVoice = try container.decodeIfPresent(Bool.self, forKey: .undoesByVoice) ?? defaults.undoesByVoice
         keepsHistory = try container.decodeIfPresent(Bool.self, forKey: .keepsHistory) ?? defaults.keepsHistory
+        dictationKey = (try? container.decodeIfPresent(DictationKey.self, forKey: .dictationKey)) ?? defaults.dictationKey
+        handsFreeByDoublePress = try container.decodeIfPresent(Bool.self, forKey: .handsFreeByDoublePress) ?? defaults.handsFreeByDoublePress
         autoPaste = try container.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? defaults.autoPaste
         restoreClipboard = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? defaults.restoreClipboard
+        microphoneUID = try container.decodeIfPresent(String.self, forKey: .microphoneUID)
         microphoneSensitivity = try container.decodeIfPresent(Double.self, forKey: .microphoneSensitivity) ?? defaults.microphoneSensitivity
         indicatorStyle = (try? container.decodeIfPresent(IndicatorStyle.self, forKey: .indicatorStyle)) ?? defaults.indicatorStyle
         waveColor = (try? container.decodeIfPresent(WaveColor.self, forKey: .waveColor)) ?? defaults.waveColor

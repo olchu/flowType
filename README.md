@@ -28,6 +28,10 @@ If you press `Fn` and say nothing, nothing is pasted: the speech detector drops 
 
 To cancel, press `Esc` while recording or while the text is being processed. Nothing is pasted, and the `Esc` doesn't reach the app you're typing in.
 
+For a long dictation, double-press `Fn` and let go: the recording goes on without holding the key, until you press it once more. `Esc` cancels it as usual.
+
+If `Fn` doesn't suit you, *Settings → General* offers the right `⌥`, `⌘` or `⌃` instead. Pressing another key or a mouse button along with one of them counts as a shortcut, so right `⌘` + `C` still copies: a recording you're holding is dropped, and a hands-free one just goes on.
+
 If the text went nowhere, say because the cursor wasn't in a text field, put the cursor where it belongs and press `⌃⌥V`. FlowType pastes the last dictation again, whatever is on the clipboard by then.
 
 To take back what you just dictated, hold `Fn` and say “отмени”, “удали последнее” or “undo that”. It works right after the dictation, in the same field, while the cursor is still after it.
@@ -127,7 +131,7 @@ FlowType keeps the last 100 dictations from the past week. *History…* in the m
 
 The menu shows the current status and model loading progress, switches the indicator style and opens the history. Settings live in one window with a sidebar, the way System Settings does it:
 
-- General: hotkey, auto-paste and clipboard restore, history, open at login, reset settings.
+- General: hotkey and double press for hands-free, microphone, auto-paste and clipboard restore, history, open at login, reset settings. The microphone follows the system's unless you choose one; a chosen one that isn't connected gives way to the system's until it's back.
 - Permissions: microphone and Accessibility. Changes you make in System Settings are picked up automatically.
 - Models: profile choice, model download and deletion, loading progress of the active model.
 - Transcription: language, streaming mode and text cleanup.
@@ -146,7 +150,7 @@ On first launch, an onboarding window offers to download the selected model.
 
 | Stage | Technology |
 |---|---|
-| Global `Fn` hotkey | `CGEvent` tap (listen-only) |
+| Global hotkey | `CGEvent` tap (listen-only) |
 | Recording | `AVAudioEngine`, mono PCM in memory, resampled to 16 kHz |
 | Speech detection | Silero VAD via [FluidAudio](https://github.com/FluidInference/FluidAudio) |
 | Recognition | [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) (Core ML), NVIDIA Parakeet TDT via FluidAudio, Sber GigaAM v3 on Core ML |

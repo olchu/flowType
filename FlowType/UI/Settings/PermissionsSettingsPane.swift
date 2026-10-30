@@ -9,7 +9,7 @@ struct PermissionsSettingsPane: View {
                 PermissionRow(
                     systemImage: "mic",
                     title: "Microphone",
-                    detail: "Records your voice while you hold Fn. Audio never leaves this Mac.",
+                    detail: "Records your voice while you dictate. Audio never leaves this Mac.",
                     isGranted: appState.microphonePermission.isGranted,
                     actionTitle: appState.microphonePermission == .notDetermined ? "Allow…" : "Open Settings…"
                 ) {
@@ -19,7 +19,7 @@ struct PermissionsSettingsPane: View {
                 PermissionRow(
                     systemImage: "accessibility",
                     title: "Accessibility",
-                    detail: "Listens for the Fn key and pastes the text into other apps.",
+                    detail: "Listens for the hotkey and pastes the text into other apps.",
                     isGranted: appState.hasAccessibilityPermission,
                     actionTitle: "Open Settings…"
                 ) {

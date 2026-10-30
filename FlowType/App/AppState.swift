@@ -21,6 +21,7 @@ final class AppState: ObservableObject {
         didSet {
             guard settings != oldValue else { return }
             settingsStorageService.save(settings)
+            hotkeyService.dictationKey = settings.dictationKey
             floatingIndicatorController.placement = settings.indicatorPosition
             if settings.indicatorAppearance != oldValue.indicatorAppearance {
                 updateFloatingIndicator()
@@ -50,6 +51,8 @@ final class AppState: ObservableObject {
     }
     let history = DictationHistory()
     @Published var lastErrorMessage: String?
+    /// The microphones connected right now.
+    @Published private(set) var microphones: [AudioInputDevice] = []
     @Published private(set) var isHotkeyRunning = false
     /// While the user drags the indicator to where it should appear.
     @Published private(set) var isPositioningIndicator = false
@@ -74,6 +77,8 @@ final class AppState: ObservableObject {
 
     private let audioRecorder = AudioRecorderService()
     private let hotkeyService = HotkeyService()
+    private var keyGesture = DictationKeyGesture()
+    private var secondPressTimeout: Task<Void, Never>?
     private let permissionsService = PermissionsService()
     private let transcriptionService = TranscriptionService()
     private let transcriptCleanupService = TranscriptCleanupService()
@@ -140,6 +145,13 @@ final class AppState: ObservableObject {
         audioRecorder.onLevelChanged = { [weak self] level, bands in
             guard let self else { return }
             updateAudioLevel(level, bands: bands)
+        }
+        microphones = AudioInputDevices.all()
+        AudioInputDevices.onChange { [weak self] in
+            let microphones = AudioInputDevices.all()
+            if microphones != self?.microphones {
+                self?.microphones = microphones
+            }
         }
 
         refreshPermissions()
@@ -214,8 +226,11 @@ final class AppState: ObservableObject {
         let timing = DictationTiming()
         timing.mark("start requested")
 
+        // Not connected right now: the system's microphone takes over.
+        let microphone = microphones.first { $0.uid == settings.microphoneUID }?.id
+
         do {
-            try audioRecorder.startRecording()
+            try audioRecorder.startRecording(inputDeviceID: microphone)
             timing.mark("audio recording started")
         } catch {
             showError(error)
@@ -238,7 +253,8 @@ final class AppState: ObservableObject {
             do {
                 try await transcriptionService.startStreamingTranscription(
                     language: settings.language,
-                    model: settings.profile.model
+                    model: settings.profile.model,
+                    inputDeviceID: microphone
                 )
             } catch {
                 guard !Task.isCancelled else { return }
@@ -249,7 +265,7 @@ final class AppState: ObservableObject {
     }
 
     /// Escape during a dictation drops the recording, or its processing if
-    /// Fn was already released, and nothing is pasted.
+    /// the key was already released, and nothing is pasted.
     func cancelDictation() {
         switch status {
         case .recording:
@@ -760,12 +776,16 @@ final class AppState: ObservableObject {
             return
         }
 
-        hotkeyService.onKeyDown = { [weak self] in
-            self?.startDictation()
+        hotkeyService.dictationKey = settings.dictationKey
+
+        hotkeyService.onKeyDown = { [weak self] time in
+            guard let self else { return }
+            perform(keyGesture.press(at: time, isRecording: status == .recording))
         }
 
-        hotkeyService.onKeyUp = { [weak self] in
-            self?.finishDictation()
+        hotkeyService.onKeyUp = { [weak self] time in
+            guard let self else { return }
+            perform(keyGesture.release(at: time, allowsHandsFree: settings.handsFreeByDoublePress))
         }
 
         hotkeyService.onEscape = { [weak self] in
@@ -777,7 +797,13 @@ final class AppState: ObservableObject {
         }
 
         hotkeyService.onUserInput = { [weak self] in
-            self?.textInserter.forgetLastInsertion()
+            guard let self else { return }
+            textInserter.forgetLastInsertion()
+            // Fn is no modifier in shortcuts. Only a recording counts, not an
+            // earlier dictation still being processed.
+            if settings.dictationKey != .fn && status == .recording {
+                perform(keyGesture.interrupted())
+            }
         }
 
         do {
@@ -789,6 +815,30 @@ final class AppState: ObservableObject {
             isHotkeyRunning = false
             hotkeyStatusMessage = error.localizedDescription
             showError(error)
+        }
+    }
+
+    private func perform(_ step: DictationKeyGesture.Step) {
+        // Keeps the timeout running: `.none` also answers keys typed while
+        // it waits, and once it isn't waiting the timeout does nothing.
+        guard step != .none else { return }
+
+        secondPressTimeout?.cancel()
+        switch step {
+        case .none:
+            break
+        case .start:
+            startDictation()
+        case .finish:
+            finishDictation()
+        case .cancel:
+            cancelDictation()
+        case .awaitSecondPress:
+            secondPressTimeout = Task { [weak self] in
+                try? await Task.sleep(for: DictationKeyGesture.secondPressWindow)
+                guard !Task.isCancelled, let self else { return }
+                perform(keyGesture.secondPressTimedOut())
+            }
         }
     }
 

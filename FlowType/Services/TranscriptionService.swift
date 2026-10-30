@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import WhisperKit
 
@@ -113,7 +114,8 @@ final class TranscriptionService {
 
     func startStreamingTranscription(
         language: TranscriptionLanguage,
-        model: TranscriptionModel
+        model: TranscriptionModel,
+        inputDeviceID: AudioDeviceID?
     ) async throws {
         await stopStreamingTranscription()
         streamSnapshot.reset()
@@ -138,7 +140,7 @@ final class TranscriptionService {
             segmentSeeker: pipeline.segmentSeeker,
             textDecoder: pipeline.textDecoder,
             tokenizer: tokenizer,
-            audioProcessor: pipeline.audioProcessor,
+            audioProcessor: InputDeviceAudioProcessor(base: pipeline.audioProcessor, inputDeviceID: inputDeviceID),
             decodingOptions: options,
             requiredSegmentsForConfirmation: 1
         ) { [streamSnapshot] _, newState in
@@ -340,5 +342,60 @@ private final class LoadingStageTracker: @unchecked Sendable {
         guard message.contains(stage.keyword) else { return nil }
         currentIndex += 1
         return (stage.progress, stage.label)
+    }
+}
+
+/// Gives AudioStreamTranscriber the chosen microphone: it starts recording
+/// without naming a device, which means the system's. Its methods can't be
+/// overridden in a subclass, as they live in an extension, so everything else
+/// is passed on to `base`.
+nonisolated private final class InputDeviceAudioProcessor: AudioProcessing, @unchecked Sendable {
+    private var base: any AudioProcessing
+    private let inputDeviceID: DeviceID?
+
+    init(base: any AudioProcessing, inputDeviceID: DeviceID?) {
+        self.base = base
+        self.inputDeviceID = inputDeviceID
+    }
+
+    var audioSamples: ContiguousArray<Float> { base.audioSamples }
+    var relativeEnergy: [Float] { base.relativeEnergy }
+    var relativeEnergyWindow: Int {
+        get { base.relativeEnergyWindow }
+        set { base.relativeEnergyWindow = newValue }
+    }
+
+    func startRecordingLive(inputDeviceID: DeviceID?, callback: (([Float]) -> Void)?) throws {
+        try base.startRecordingLive(inputDeviceID: self.inputDeviceID, callback: callback)
+    }
+
+    func resumeRecordingLive(inputDeviceID: DeviceID?, callback: (([Float]) -> Void)?) throws {
+        try base.resumeRecordingLive(inputDeviceID: self.inputDeviceID, callback: callback)
+    }
+
+    func startStreamingRecordingLive(
+        inputDeviceID: DeviceID?
+    ) -> (AsyncThrowingStream<[Float], Error>, AsyncThrowingStream<[Float], Error>.Continuation) {
+        base.startStreamingRecordingLive(inputDeviceID: self.inputDeviceID)
+    }
+
+    func purgeAudioSamples(keepingLast keep: Int) { base.purgeAudioSamples(keepingLast: keep) }
+    func pauseRecording() { base.pauseRecording() }
+    func stopRecording() { base.stopRecording() }
+
+    func padOrTrim(fromArray audioArray: [Float], startAt startIndex: Int, toLength frameLength: Int) -> (any AudioProcessorOutputType)? {
+        base.padOrTrim(fromArray: audioArray, startAt: startIndex, toLength: frameLength)
+    }
+
+    static func loadAudio(
+        fromPath audioFilePath: String, channelMode: ChannelMode, startTime: Double?, endTime: Double?, maxReadFrameSize: AVAudioFrameCount?
+    ) throws -> AVAudioPCMBuffer {
+        try AudioProcessor.loadAudio(
+            fromPath: audioFilePath, channelMode: channelMode, startTime: startTime, endTime: endTime, maxReadFrameSize: maxReadFrameSize
+        )
+    }
+
+    static func loadAudio(at audioPaths: [String], channelMode: ChannelMode) async -> [Result<[Float], Swift.Error>] {
+        await AudioProcessor.loadAudio(at: audioPaths, channelMode: channelMode)
     }
 }

@@ -1,6 +1,31 @@
+import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
 import Foundation
+import IOKit.hidsystem
+
+private extension DictationKey {
+    /// Whether `flags` of a modifier change have the key down. The right
+    /// and left keys differ only in the flags' device-dependent bits.
+    func isDown(in flags: CGEventFlags) -> Bool {
+        switch self {
+        case .fn: flags.contains(.maskSecondaryFn)
+        case .rightOption: flags.rawValue & UInt64(NX_DEVICERALTKEYMASK) != 0
+        case .rightCommand: flags.rawValue & UInt64(NX_DEVICERCMDKEYMASK) != 0
+        case .rightControl: flags.rawValue & UInt64(NX_DEVICERCTLKEYMASK) != 0
+        }
+    }
+
+    /// Whether the key is down right now, without an event to tell.
+    var isDown: Bool {
+        switch self {
+        case .fn: CGEventSource.flagsState(.combinedSessionState).contains(.maskSecondaryFn)
+        case .rightOption: CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(kVK_RightOption))
+        case .rightCommand: CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(kVK_RightCommand))
+        case .rightControl: CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(kVK_RightControl))
+        }
+    }
+}
 
 @MainActor
 final class HotkeyService {
@@ -30,8 +55,20 @@ final class HotkeyService {
         }
     }
 
-    var onKeyDown: (() -> Void)?
-    var onKeyUp: (() -> Void)?
+    var dictationKey = DictationKey.fn {
+        didSet {
+            // Settings are assigned on every change, some of them mid-press.
+            if dictationKey != oldValue && isPressed {
+                isPressed = false
+                onKeyUp?(ProcessInfo.processInfo.systemUptime)
+            }
+        }
+    }
+    /// With the time of the event, in seconds of system uptime. It can be
+    /// well before the call: this runs on the main thread, which starting
+    /// the recording can hold up for a slow microphone.
+    var onKeyDown: ((TimeInterval) -> Void)?
+    var onKeyUp: ((TimeInterval) -> Void)?
     var onEscape: (() -> Void)?
     /// ⌃⌥V, for pasting the last dictation again.
     var onPasteLast: (() -> Void)?
@@ -55,7 +92,7 @@ final class HotkeyService {
 
     private static let escapeKeyCode = Int64(kVK_Escape)
 
-    private var fnTap: EventTap?
+    private var keyTap: EventTap?
     /// Created on the first dictation and enabled only while Escape is
     /// intercepted.
     private var escapeTap: EventTap?
@@ -73,10 +110,10 @@ final class HotkeyService {
     private var isSwallowingEscape = false
 
     func start() throws {
-        guard fnTap == nil else { return }
+        guard keyTap == nil else { return }
 
         let userInput: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
-        guard let fnTap = makeTap(
+        guard let keyTap = makeTap(
             events: userInput.reduce(1 << CGEventType.flagsChanged.rawValue) { $0 | 1 << $1.rawValue },
             options: .listenOnly,
             callback: { _, type, event, userInfo in
@@ -90,19 +127,19 @@ final class HotkeyService {
         ) else {
             throw HotkeyError.eventTapCreationFailed
         }
-        fnTap.setEnabled(true)
-        self.fnTap = fnTap
+        keyTap.setEnabled(true)
+        self.keyTap = keyTap
         updateEscapeTap()
         registerPasteLastHotKey()
     }
 
     func stop() {
-        fnTap?.remove()
+        keyTap?.remove()
         escapeTap?.remove()
         pasteLastHotKey.map { _ = UnregisterEventHotKey($0) }
         hotKeyHandler.map { _ = RemoveEventHandler($0) }
 
-        fnTap = nil
+        keyTap = nil
         escapeTap = nil
         pasteLastHotKey = nil
         hotKeyHandler = nil
@@ -148,7 +185,10 @@ final class HotkeyService {
     private func handleEvent(type: CGEventType, event: CGEvent) {
         switch type {
         case .flagsChanged:
-            updateFnState(isFnPressed: event.flags.contains(.maskSecondaryFn))
+            updateKeyState(
+                isKeyPressed: dictationKey.isDown(in: event.flags),
+                at: NSEvent(cgEvent: event)?.timestamp ?? ProcessInfo.processInfo.systemUptime
+            )
         case .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown:
             if event.getIntegerValueField(.eventSourceUserData) != PasteService.syntheticEventMarker {
                 onUserInput?()
@@ -156,25 +196,24 @@ final class HotkeyService {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             // The system switches the tap off when the main thread stalls past
             // the tap timeout. It stays off until re-enabled, which would
-            // leave Fn dead until the app restarts.
-            fnTap?.setEnabled(true)
-            // A Fn release that happened while the tap was off was never
+            // leave the key dead until the app restarts.
+            keyTap?.setEnabled(true)
+            // A release that happened while the tap was off was never
             // delivered; without this the recording would never stop.
-            let flags = CGEventSource.flagsState(.combinedSessionState)
-            updateFnState(isFnPressed: flags.contains(.maskSecondaryFn))
+            updateKeyState(isKeyPressed: dictationKey.isDown, at: ProcessInfo.processInfo.systemUptime)
         default:
             break
         }
     }
 
-    private func updateFnState(isFnPressed: Bool) {
-        switch (isPressed, isFnPressed) {
+    private func updateKeyState(isKeyPressed: Bool, at time: TimeInterval) {
+        switch (isPressed, isKeyPressed) {
         case (false, true):
             isPressed = true
-            onKeyDown?()
+            onKeyDown?(time)
         case (true, false):
             isPressed = false
-            onKeyUp?()
+            onKeyUp?(time)
         default:
             break
         }
@@ -190,7 +229,7 @@ final class HotkeyService {
         let isNeeded = interceptsEscape || isSwallowingEscape
         // Retried on each dictation: without this tap Escape just isn't
         // intercepted, dictation still works.
-        if isNeeded && escapeTap == nil && fnTap != nil {
+        if isNeeded && escapeTap == nil && keyTap != nil {
             escapeTap = makeEscapeTap()
         }
 
