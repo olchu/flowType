@@ -134,6 +134,8 @@ struct AppSettings: Codable, Equatable {
     var dictationKey: DictationKey = .fn
     /// Double-pressing the key keeps recording until it is pressed again.
     var handsFreeByDoublePress = true
+    /// A forgotten hands-free recording finishes by itself after this long.
+    var handsFreeLimitMinutes = 10
     var autoPaste = true
     var restoreClipboard = true
     /// The chosen microphone's `AudioInputDevice.uid`; nil follows the
@@ -191,6 +193,7 @@ struct AppSettings: Codable, Equatable {
         keepsHistory = try container.decodeIfPresent(Bool.self, forKey: .keepsHistory) ?? defaults.keepsHistory
         dictationKey = (try? container.decodeIfPresent(DictationKey.self, forKey: .dictationKey)) ?? defaults.dictationKey
         handsFreeByDoublePress = try container.decodeIfPresent(Bool.self, forKey: .handsFreeByDoublePress) ?? defaults.handsFreeByDoublePress
+        handsFreeLimitMinutes = try container.decodeIfPresent(Int.self, forKey: .handsFreeLimitMinutes) ?? defaults.handsFreeLimitMinutes
         autoPaste = try container.decodeIfPresent(Bool.self, forKey: .autoPaste) ?? defaults.autoPaste
         restoreClipboard = try container.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? defaults.restoreClipboard
         microphoneUID = try container.decodeIfPresent(String.self, forKey: .microphoneUID)

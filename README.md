@@ -28,7 +28,7 @@ If you press `Fn` and say nothing, nothing is pasted: the speech detector drops 
 
 To cancel, press `Esc` while recording or while the text is being processed. Nothing is pasted, and the `Esc` doesn't reach the app you're typing in.
 
-For a long dictation, double-press `Fn` and let go: the recording goes on without holding the key, until you press it once more. `Esc` cancels it as usual.
+For a long dictation, double-press `Fn` and let go: the recording goes on without holding the key, until you press it once more. `Esc` cancels it as usual. A recording you forgot about finishes by itself after 10 minutes and its text is pasted; you can change the limit in *Settings → General*.
 
 If `Fn` doesn't suit you, *Settings → General* offers the right `⌥`, `⌘` or `⌃` instead. Pressing another key or a mouse button along with one of them counts as a shortcut, so right `⌘` + `C` still copies: a recording you're holding is dropped, and a hands-free one just goes on.
 

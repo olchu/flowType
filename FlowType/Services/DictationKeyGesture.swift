@@ -14,6 +14,8 @@ struct DictationKeyGesture {
         case start
         case finish
         case cancel
+        /// The key is free and the recording goes on.
+        case startHandsFree
         /// Call `secondPressTimedOut` after `secondPressWindow`, unless
         /// another step comes first.
         case awaitSecondPress
@@ -65,7 +67,7 @@ struct DictationKeyGesture {
             return .finish
         case .heldAgain(let since):
             state = .idle
-            return time - since < Self.tapLength ? .none : .finish
+            return time - since < Self.tapLength ? .startHandsFree : .finish
         case .stopping:
             state = .idle
             return .finish

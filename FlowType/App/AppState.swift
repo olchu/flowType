@@ -12,6 +12,8 @@ final class AppState: ObservableObject {
             // so the real voice drives it, not the made-up one.
             if status == .recording {
                 finishIndicatorPositioning(keeps: true)
+            } else {
+                handsFreeLimit?.cancel()
             }
             updateFloatingIndicator()
             updateEscapeInterception()
@@ -79,6 +81,8 @@ final class AppState: ObservableObject {
     private let hotkeyService = HotkeyService()
     private var keyGesture = DictationKeyGesture()
     private var secondPressTimeout: Task<Void, Never>?
+    /// Runs for the length of a hands-free recording.
+    private var handsFreeLimit: Task<Void, Never>?
     private let permissionsService = PermissionsService()
     private let transcriptionService = TranscriptionService()
     private let transcriptCleanupService = TranscriptCleanupService()
@@ -833,6 +837,13 @@ final class AppState: ObservableObject {
             finishDictation()
         case .cancel:
             cancelDictation()
+        case .startHandsFree:
+            let limit = Duration.seconds(settings.handsFreeLimitMinutes * 60)
+            handsFreeLimit = Task { [weak self] in
+                try? await Task.sleep(for: limit)
+                guard !Task.isCancelled else { return }
+                self?.finishDictation()
+            }
         case .awaitSecondPress:
             secondPressTimeout = Task { [weak self] in
                 try? await Task.sleep(for: DictationKeyGesture.secondPressWindow)

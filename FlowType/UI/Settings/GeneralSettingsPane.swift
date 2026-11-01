@@ -26,6 +26,23 @@ struct GeneralSettingsPane: View {
                     isOn: $appState.settings.handsFreeByDoublePress
                 )
 
+                if appState.settings.handsFreeByDoublePress {
+                    SettingsRow("Finish hands-free after", subtitle: "A recording you forgot about stops by itself, and its text is pasted.") {
+                        HStack(spacing: 8) {
+                            TextField("Minutes", value: handsFreeLimit, format: .number)
+                                .labelsHidden()
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 48)
+
+                            Text("min")
+                                .foregroundStyle(.secondary)
+
+                            Stepper("Minutes", value: handsFreeLimit, in: Self.handsFreeLimits)
+                                .labelsHidden()
+                        }
+                    }
+                }
+
                 SettingsRow("Paste last dictation") {
                     if appState.isHotkeyRunning && !appState.isPasteLastHotKeyAvailable {
                         Text("⌃⌥V is taken by another app")
@@ -134,6 +151,16 @@ struct GeneralSettingsPane: View {
             Text("Hotkey, microphone, profile, language, cleanup, text rules, paste, indicator and sound settings go back to their defaults. Your dictionary, snippets and history are kept.")
         }
         .clearHistoryConfirmation(isPresented: $isConfirmingClearHistory, history: appState.history)
+    }
+
+    private static let handsFreeLimits = 1...480
+
+    /// Typing gets past the stepper's range, so it is held to it here.
+    private var handsFreeLimit: Binding<Int> {
+        Binding(
+            get: { appState.settings.handsFreeLimitMinutes },
+            set: { appState.settings.handsFreeLimitMinutes = min(max($0, Self.handsFreeLimits.lowerBound), Self.handsFreeLimits.upperBound) }
+        )
     }
 
     private var appVersion: String {
