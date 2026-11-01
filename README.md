@@ -7,7 +7,7 @@
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)](#requirements)
 [![Swift](https://img.shields.io/badge/Swift-SwiftUI-orange?logo=swift)](https://developer.apple.com/swift/)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-on--device-blue)](#privacy)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: MIT with exceptions](https://img.shields.io/badge/License-MIT%20with%20exceptions-green.svg)](#license)
 
 FlowType is a free, open-source menu bar app that lets you dictate into any app on your Mac. Hold `Fn`, speak, let go, and the text is pasted wherever your cursor is.
 
@@ -248,6 +248,8 @@ Speech and language models aren't bundled with the app. They're downloaded from 
 
 ## License
 
-The FlowType source code is released under the [MIT License](LICENSE).
+FlowType is free. Its source code is released under the [MIT License](LICENSE), with the exceptions below.
 
-The FlowType name, the app icon, the menu bar icon and the images in `Docs/images` are not covered by the MIT License, and all rights to them are reserved. If you publish a fork or a derived app, please give it a different name and icon.
+The design of the recording indicators is not covered by the MIT License, and all rights to it are reserved. That means the look and motion of the Waves, Dots, Aurora, Particles and Bars styles, with their colours and palettes, and the files that draw them, listed in [LICENSE](LICENSE). You may build and run FlowType from this repository for your own use, but you may not copy the indicators or reuse them in another app or product without written permission.
+
+The FlowType name, the app icon, the menu bar icon and the images in `Docs/images` are not covered by the MIT License either, and all rights to them are reserved. If you publish a fork or a derived app, give it a different name and icon, and remove the indicators or replace them with your own.

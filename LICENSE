@@ -1,3 +1,7 @@
+FlowType is free to use. Its source code is licensed under the MIT License
+below, except for the Indicator Design, which is excluded from that license
+and described at the end of this file.
+
 MIT License
 
 Copyright (c) 2026 olchu (FlowType)
@@ -19,3 +23,32 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+Indicator Design
+
+Copyright (c) 2026 olchu. All rights reserved.
+
+The "Indicator Design" is the look and motion of FlowType's recording
+indicators: the Waves, Dots, Aurora, Particles and Bars styles, with their
+shapes, colours, palettes and animations, and these files that draw them:
+
+  FlowType/UI/WaveIndicatorView.swift
+  FlowType/UI/WaveAppearance.swift
+  FlowType/UI/DotsIndicatorView.swift
+  FlowType/UI/AuroraIndicatorView.swift
+  FlowType/UI/AuroraRenderer.swift
+  FlowType/UI/AuroraShader.metal
+  FlowType/UI/ParticleFieldIndicatorView.swift
+  FlowType/UI/ParticleFieldRenderer.swift
+  FlowType/UI/ParticleFieldShader.metal
+
+The MIT License above does not apply to the Indicator Design. You may view it,
+and build and run FlowType from this repository for your own use. You may not
+copy, adapt or redistribute it, on its own or as part of another app or
+product, without written permission from the copyright holder. A fork or a
+derived app that is published must remove the Indicator Design or replace it
+with its own.
+
+This section applies from the version that adds it. Versions published before
+it remain under the MIT License.
