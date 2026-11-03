@@ -3,16 +3,15 @@ import SwiftUI
 
 /// Colours of the settings window: monochrome, graphite on white in the
 /// light appearance and white on graphite in the dark one, with the cards a
-/// step lighter than the page in both.
+/// step lighter than the page in both. Sections are one card each, never a
+/// card inside a card.
 enum SettingsStyle {
     /// Switches, sliders, prominent buttons, the selected segment and the
     /// selected sidebar row.
     static let ink = dynamic(light: NSColor(white: 0.17, alpha: 1), dark: NSColor(white: 0.96, alpha: 1))
     /// Text and knobs on `ink`.
     static let onInk = dynamic(light: .white, dark: NSColor(white: 0.13, alpha: 1))
-    /// A section: the title, the card of rows and the footer.
-    static let section = dynamic(light: NSColor(white: 0.975, alpha: 1), dark: NSColor(white: 1, alpha: 0.045))
-    /// The card of rows inside a section.
+    /// The card of a section's rows.
     static let card = dynamic(light: .white, dark: NSColor(white: 1, alpha: 0.06))
     static let hairline = Color.primary.opacity(0.07)
     /// Behind small things on a card: key caps, badges, icons, segments.
@@ -62,7 +61,7 @@ struct SettingsPage<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(pane.title)
                         .font(.system(size: 28, weight: .bold))
@@ -72,7 +71,6 @@ struct SettingsPage<Content: View>: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 4)
-                .padding(.bottom, 8)
 
                 content
             }
@@ -84,7 +82,8 @@ struct SettingsPage<Content: View>: View {
     }
 }
 
-/// A titled card of rows, with an optional note under it. Each row gets the
+/// A title, a card of rows and an optional note under it, the title and
+/// the note on the page itself. Each row gets the
 /// row padding and a line above it, except the first.
 struct SettingsSection<Content: View>: View {
     let title: String
@@ -98,7 +97,7 @@ struct SettingsSection<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(0.6)
@@ -123,12 +122,6 @@ struct SettingsSection<Content: View>: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
             }
-        }
-        .padding(14)
-        .background(SettingsStyle.section, in: .rect(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(SettingsStyle.hairline)
         }
     }
 

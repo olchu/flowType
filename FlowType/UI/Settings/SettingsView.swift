@@ -81,6 +81,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @State private var selection = LaunchArguments.settingsPane ?? .general
+    @FocusState private var isSidebarFocused: Bool
 
     var body: some View {
         NavigationSplitView {
@@ -95,6 +96,12 @@ struct SettingsView: View {
         .onAppear {
             appState.refreshPermissions()
             appState.refreshLaunchAtLoginStatus()
+            // The window opens with focus on the sidebar. AppKit puts it in
+            // the first text field of the pane once the window is shown, so
+            // this waits for that.
+            DispatchQueue.main.async {
+                isSidebarFocused = true
+            }
         }
         // Permissions are granted in System Settings; pick them up on return.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -117,6 +124,7 @@ struct SettingsView: View {
             // the selected row shows where focus is.
             .focusable()
             .focusEffectDisabled()
+            .focused($isSidebarFocused)
             .onMoveCommand { direction in
                 let panes = SettingsPane.allCases
                 guard let index = panes.firstIndex(of: selection) else { return }
