@@ -94,11 +94,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let transcript = LaunchArguments.cleanupTranscript {
             Task {
                 let service = TranscriptCleanupService()
-                try? await service.prewarmLocalLLM(model: Self.cleanupModelArgument)
+                let settings = SettingsStorageService().load()
+                let mode = LaunchArguments.cleanupMode ?? .localLLM
+                if mode == .localLLM {
+                    try? await service.prewarmLocalLLM(model: Self.cleanupModelArgument)
+                }
                 let start = ContinuousClock.now
                 let result = await service.clean(
-                    transcript, mode: .localLLM, model: Self.cleanupModelArgument,
-                    rules: SettingsStorageService().load().textRules(snippets: [])
+                    transcript, mode: mode, model: Self.cleanupModelArgument,
+                    // The Keychain only when the key is needed.
+                    external: AppState.externalLLMConfiguration(
+                        settings,
+                        apiKey: mode == .externalLLM ? AppState.externalLLMAPIKey(for: settings.externalLLM.provider) : ""
+                    ),
+                    rules: settings.textRules(snippets: [])
                 )
                 let elapsed = start.duration(to: .now)
                 print(result.text)

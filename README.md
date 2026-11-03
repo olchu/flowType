@@ -11,7 +11,7 @@
 
 FlowType is a free, open-source menu bar app that lets you dictate into any app on your Mac. Hold `Fn`, speak, let go, and the text is pasted wherever your cursor is.
 
-Recognition runs on your Mac, with Whisper, NVIDIA Parakeet or Sber GigaAM. Your audio stays in memory and is never written to disk, and the app needs the network only once, to download the models.
+Recognition runs on your Mac, with Whisper, NVIDIA Parakeet or Sber GigaAM. Your audio stays in memory and is never written to disk, and the app needs the network only once, to download the models. If you want a stronger model to clean up the text, you can connect your own, in the cloud or on your Mac.
 
 ## How it works
 
@@ -89,6 +89,22 @@ The *Dictionary* holds words and names the recogniser gets wrong, written your w
 | Qwen3 4B | 2.3 GB | Most careful edits, about twice as slow |
 | Gemma 4 E2B | 3.6 GB | Strong multilingual model from Google |
 
+*External LLM* applies the same rules and then sends the text to a model you connect. Besides punctuation and misheard words, it takes out what a small model can't be trusted with: false starts and slips you corrected, so “давай в среду, нет, в четверг” becomes “Давай в четверг”. Its edits go through the same check, which lets it drop more words than the local model, and an edit that rewrites the dictation is thrown out. If the model doesn't answer within 8 seconds, or 30 for a server on your Mac, which may have to load the model first, the rule-based text is pasted. `Esc` cancels the request along with the dictation.
+
+| Provider | Default model | Runs |
+|---|---|---|
+| OpenAI | `gpt-5.4-mini` | Cloud |
+| Anthropic | `claude-haiku-5-5` | Cloud |
+| Google Gemini | `gemini-3.1-flash-lite` | Cloud |
+| Groq | `openai/gpt-oss-20b` | Cloud |
+| OpenRouter | `google/gemini-3.1-flash-lite` | Cloud |
+| Ollama, LM Studio | any model you have | On your Mac |
+| Custom | any model | Any server with the OpenAI chat completions API |
+
+The API key is kept in the Keychain, separately for each provider. *Check* lists the server's models and cleans up a test phrase, so you see that the connection works and how fast it answers. You can add your own instructions to the built-in prompt, such as “Keep English terms in Latin script”. The words from your dictionary go into the prompt too, so the model keeps their spelling.
+
+With a cloud provider, the text of every dictation goes to that provider, and its privacy terms apply. The audio and your snippets never leave your Mac.
+
 ### Pasting
 
 FlowType puts the text on the clipboard, pastes it with `⌘V` into the app where you started dictating, then restores your previous clipboard (you can turn that off). The clipboard is restored once that app has actually read the text, not after a fixed delay, so a slow app never gets your old clipboard pasted instead. If you copy something in the meantime, your copy is kept. The transcript is marked as transient, so clipboard managers like Maccy, Paste and Raycast don't save it to their history. If `⌘V` fails, the text is inserted through the Accessibility API, and if that fails too, it stays on the clipboard.
@@ -134,7 +150,7 @@ The menu shows the current status and model loading progress, switches the indic
 - General: hotkey and double press for hands-free, microphone, auto-paste and clipboard restore, history, open at login, reset settings. The microphone follows the system's unless you choose one; a chosen one that isn't connected gives way to the system's until it's back.
 - Permissions: microphone and Accessibility. Changes you make in System Settings are picked up automatically.
 - Models: profile choice, model download and deletion, loading progress of the active model.
-- Transcription: language, streaming mode and text cleanup.
+- Transcription: language, streaming mode and text cleanup, including the provider, key and model of an external LLM.
 - Text Rules: fitting the text around the cursor, the full stop at the end, filler words, numbers as digits, spoken punctuation, the dictionary and the undo command.
 - Snippets: phrases that stand for longer text, such as your email or address.
 - Indicator: style (Bars, Waves, Dots, Aurora or Particles), colour or palette, position and sensitivity, with a live preview. *Choose…* under Position shows the indicator so you can drag it anywhere on any screen; it appears there from then on.
@@ -154,7 +170,7 @@ On first launch, an onboarding window offers to download the selected model.
 | Recording | `AVAudioEngine`, mono PCM in memory, resampled to 16 kHz |
 | Speech detection | Silero VAD via [FluidAudio](https://github.com/FluidInference/FluidAudio) |
 | Recognition | [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) (Core ML), NVIDIA Parakeet TDT via FluidAudio, Sber GigaAM v3 on Core ML |
-| Cleanup | Custom rules, LLM via [MLX Swift LM](https://github.com/ml-explore/mlx-swift-lm) |
+| Cleanup | Custom rules, LLM via [MLX Swift LM](https://github.com/ml-explore/mlx-swift-lm), or an external one through the OpenAI chat completions or Anthropic Messages API |
 | Pasting | `NSPasteboard`, `CGEvent` for `⌘V`, Accessibility API |
 | UI | SwiftUI `MenuBarExtra`, `NSPanel` for the indicator, Core Animation |
 
@@ -211,6 +227,9 @@ You can run LLM cleanup from the command line without recording anything:
 
 # clean up a string and print the result, the decision and the timing
 "Flow Type.app/Contents/MacOS/Flow Type" --cleanup-transcript "so um I wanted to to say that" --cleanup-model "Qwen3.5 2B"
+
+# the same through the external LLM from the settings
+"Flow Type.app/Contents/MacOS/Flow Type" --cleanup-transcript "давай в среду нет в четверг" --cleanup-mode "External LLM"
 ```
 
 ### Updating the README images
@@ -233,7 +252,7 @@ The Wave Tuner is a hidden editor for design work. Open *Settings → Indicator*
 
 ## Privacy
 
-Audio is processed in memory and never saved. Recognition and cleanup run locally, with no cloud APIs. The network is used only to download models from Hugging Face.
+Audio is processed in memory and never saved. Recognition and cleanup run locally, with no cloud APIs. The network is used only to download models from Hugging Face, unless you connect a cloud model for text cleanup: then the text of each dictation, never the audio, goes to the provider you chose.
 
 ## Acknowledgements
 

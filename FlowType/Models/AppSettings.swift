@@ -22,6 +22,7 @@ enum TranscriptionFinalizationMode: String, Codable, CaseIterable, Identifiable 
 enum TranscriptCleanupMode: String, Codable, CaseIterable, Identifiable {
     case localRules = "Local rules"
     case localLLM = "Local LLM"
+    case externalLLM = "External LLM"
     case off = "Off"
 
     var id: Self { self }
@@ -32,6 +33,8 @@ enum TranscriptCleanupMode: String, Codable, CaseIterable, Identifiable {
             "Fast built-in cleanup for duplicate fragments and Whisper artifacts."
         case .localLLM:
             "Local rules plus an on-device model for punctuation and obvious recognition errors. Edits that add or drop words are rejected."
+        case .externalLLM:
+            "Local rules plus a model you connect, in the cloud or on this Mac, that also takes out repeats, false starts and slips you corrected. Edits that rewrite the dictation are rejected."
         case .off:
             "Keeps only the basic WhisperKit text cleanup. Text rules still apply."
         }
@@ -57,6 +60,105 @@ enum CleanupLLMModel: String, Codable, CaseIterable, Identifiable {
         case .gemma4E2B:
             "3.6 GB. Strong multilingual model from Google."
         }
+    }
+}
+
+/// Where an external cleanup model runs. All but Anthropic speak the
+/// OpenAI chat completions API.
+nonisolated enum ExternalLLMProvider: String, Codable, CaseIterable, Identifiable, Sendable {
+    case openAI = "OpenAI"
+    case anthropic = "Anthropic"
+    case gemini = "Google Gemini"
+    case groq = "Groq"
+    case openRouter = "OpenRouter"
+    case ollama = "Ollama"
+    case lmStudio = "LM Studio"
+    case custom = "Custom"
+
+    var id: Self { self }
+
+    var defaultBaseURL: String {
+        switch self {
+        case .openAI: "https://api.openai.com/v1"
+        case .anthropic: "https://api.anthropic.com/v1"
+        case .gemini: "https://generativelanguage.googleapis.com/v1beta/openai"
+        case .groq: "https://api.groq.com/openai/v1"
+        case .openRouter: "https://openrouter.ai/api/v1"
+        case .ollama: "http://localhost:11434/v1"
+        case .lmStudio: "http://localhost:1234/v1"
+        case .custom: ""
+        }
+    }
+
+    /// A fast, cheap model that handles Russian well; empty where the
+    /// models are the user's own, to be picked from the server's list.
+    var defaultModel: String {
+        switch self {
+        case .openAI: "gpt-5.4-mini"
+        case .anthropic: "claude-haiku-5-5"
+        case .gemini: "gemini-3.1-flash-lite"
+        case .groq: "openai/gpt-oss-20b"
+        case .openRouter: "google/gemini-3.1-flash-lite"
+        case .ollama, .lmStudio, .custom: ""
+        }
+    }
+
+    /// Cloud services refuse requests without one.
+    var requiresAPIKey: Bool {
+        switch self {
+        case .ollama, .lmStudio, .custom: false
+        default: true
+        }
+    }
+
+    /// Local servers run without one; a custom server may want one.
+    var takesAPIKey: Bool {
+        switch self {
+        case .ollama, .lmStudio: false
+        default: true
+        }
+    }
+
+    var usesAnthropicAPI: Bool { self == .anthropic }
+}
+
+/// The external cleanup model. The API key is kept in the Keychain, per
+/// provider.
+nonisolated struct ExternalLLMSettings: Codable, Equatable, Sendable {
+    var provider: ExternalLLMProvider = .openAI
+    var baseURL = ExternalLLMProvider.openAI.defaultBaseURL
+    var model = ExternalLLMProvider.openAI.defaultModel
+    /// Added to the built-in prompt: "Keep English terms in Latin script".
+    var instructions = ""
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = ExternalLLMSettings()
+        provider = (try? container.decodeIfPresent(ExternalLLMProvider.self, forKey: .provider)) ?? defaults.provider
+        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? provider.defaultBaseURL
+        model = try container.decodeIfPresent(String.self, forKey: .model) ?? provider.defaultModel
+        instructions = try container.decodeIfPresent(String.self, forKey: .instructions) ?? defaults.instructions
+    }
+
+    /// The server's host, nil while the address isn't a URL.
+    var host: String? {
+        URL(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines))?.host()?.lowercased()
+    }
+
+    /// Whether the server is this Mac, so the text never leaves it.
+    var isLocal: Bool {
+        guard let host else { return false }
+        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasSuffix(".localhost")
+    }
+
+    /// Switches to `provider` with its own server and model.
+    mutating func select(_ provider: ExternalLLMProvider) {
+        guard provider != self.provider else { return }
+        self.provider = provider
+        baseURL = provider.defaultBaseURL
+        model = provider.defaultModel
     }
 }
 
@@ -118,6 +220,7 @@ struct AppSettings: Codable, Equatable {
     var finalizationMode: TranscriptionFinalizationMode = .streamTail
     var cleanupMode: TranscriptCleanupMode = .localRules
     var cleanupModel: CleanupLLMModel = .qwen25_1_5B
+    var externalLLM = ExternalLLMSettings()
     var removesFillerWords = true
     var fillerWords = FillerWords.defaults
     var writesNumbersAsDigits = true
@@ -181,6 +284,7 @@ struct AppSettings: Codable, Equatable {
         finalizationMode = try container.decodeIfPresent(TranscriptionFinalizationMode.self, forKey: .finalizationMode) ?? defaults.finalizationMode
         cleanupMode = try container.decodeIfPresent(TranscriptCleanupMode.self, forKey: .cleanupMode) ?? defaults.cleanupMode
         cleanupModel = (try? container.decodeIfPresent(CleanupLLMModel.self, forKey: .cleanupModel)) ?? defaults.cleanupModel
+        externalLLM = (try? container.decodeIfPresent(ExternalLLMSettings.self, forKey: .externalLLM)) ?? defaults.externalLLM
         removesFillerWords = try container.decodeIfPresent(Bool.self, forKey: .removesFillerWords) ?? defaults.removesFillerWords
         fillerWords = try container.decodeIfPresent([String].self, forKey: .fillerWords) ?? defaults.fillerWords
         writesNumbersAsDigits = try container.decodeIfPresent(Bool.self, forKey: .writesNumbersAsDigits) ?? defaults.writesNumbersAsDigits

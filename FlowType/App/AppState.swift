@@ -35,8 +35,34 @@ final class AppState: ObservableObject {
                 && (oldValue.cleanupMode != .localLLM || oldValue.cleanupModel != settings.cleanupModel) {
                 prewarmTranscriptCleanupModel()
             }
+            if settings.externalLLM.provider != oldValue.externalLLM.provider {
+                loadExternalLLMAPIKey()
+            }
+            // The models and the last check belong to the old server.
+            if settings.externalLLM.baseURL != oldValue.externalLLM.baseURL {
+                externalLLMModels = []
+                externalLLMMessage = nil
+            }
         }
     }
+    /// The external cleanup model's key for the chosen provider, kept in
+    /// the Keychain.
+    @Published var externalLLMAPIKey = "" {
+        didSet {
+            let key = externalLLMAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard key != storedExternalLLMAPIKey else { return }
+            storedExternalLLMAPIKey = key
+            Keychain.set(key.isEmpty ? nil : Data(key.utf8), for: Self.externalLLMKeyAccount(settings.externalLLM.provider))
+        }
+    }
+    /// What the Keychain holds for the chosen provider, so loading a key
+    /// doesn't write it back.
+    private var storedExternalLLMAPIKey = ""
+    /// The models the external server offers, once it has been checked.
+    @Published private(set) var externalLLMModels: [String] = []
+    @Published private(set) var isCheckingExternalLLM = false
+    /// The outcome of the last check, and whether it went well.
+    @Published private(set) var externalLLMMessage: (text: String, isSuccess: Bool)?
     /// Kept in the Keychain rather than the settings: they hold addresses
     /// and phone numbers.
     @Published var snippets: [Snippet] = [] {
@@ -139,6 +165,7 @@ final class AppState: ObservableObject {
     init() {
         settings = settingsStorageService.load()
         snippets = Keychain.data(for: Self.snippetsAccount).flatMap { try? JSONDecoder().decode([Snippet].self, from: $0) } ?? []
+        loadExternalLLMAPIKey()
         applicationActivation = NSWorkspace.shared.notificationCenter
             .publisher(for: NSWorkspace.didActivateApplicationNotification)
             .compactMap { $0.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication }
@@ -362,11 +389,12 @@ final class AppState: ObservableObject {
                 rawTranscript,
                 mode: settings.cleanupMode,
                 model: settings.cleanupModel,
+                external: externalLLMConfiguration,
                 rules: settings.textRules(snippets: snippets)
             )
             let transcript = cleanupResult.text
             timing.mark(
-                "cleanup completed mode=\(settings.cleanupMode.rawValue) model=\(settings.cleanupModel.rawValue) decision=\(cleanupResult.decision) rawChars=\(rawTranscript.count) chars=\(transcript.count)"
+                "cleanup completed mode=\(settings.cleanupMode.rawValue) model=\(cleanupModelName) decision=\(cleanupResult.decision) rawChars=\(rawTranscript.count) chars=\(transcript.count)"
             )
 
             if isCancelled() { return }
@@ -652,6 +680,80 @@ final class AppState: ObservableObject {
 
             isCleanupModelWarmingUp = false
         }
+    }
+
+    /// The model that cleans up dictations, for the timing log.
+    private var cleanupModelName: String {
+        switch settings.cleanupMode {
+        case .localLLM: settings.cleanupModel.rawValue
+        case .externalLLM: "\(settings.externalLLM.provider.rawValue)/\(settings.externalLLM.model)"
+        case .localRules, .off: "none"
+        }
+    }
+
+    private func loadExternalLLMAPIKey() {
+        storedExternalLLMAPIKey = Self.externalLLMAPIKey(for: settings.externalLLM.provider)
+        externalLLMAPIKey = storedExternalLLMAPIKey
+    }
+
+    /// What a dictation sends to the external cleanup model. Snippets stay
+    /// out of it: they hold addresses and phone numbers.
+    var externalLLMConfiguration: ExternalLLMConfiguration {
+        Self.externalLLMConfiguration(settings, apiKey: externalLLMAPIKey)
+    }
+
+    nonisolated static func externalLLMConfiguration(_ settings: AppSettings, apiKey: String) -> ExternalLLMConfiguration {
+        ExternalLLMConfiguration(
+            settings: settings.externalLLM,
+            apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            vocabulary: settings.wordReplacements.map(\.written)
+        )
+    }
+
+    /// Loads the server's models and cleans up a test phrase, to show the
+    /// connection works and how fast it answers.
+    func checkExternalLLM() {
+        guard !isCheckingExternalLLM else { return }
+        let configuration = externalLLMConfiguration
+        isCheckingExternalLLM = true
+        externalLLMMessage = nil
+
+        Task {
+            defer { isCheckingExternalLLM = false }
+            // Not every server lists its models; the test phrase decides.
+            async let listedModels = (try? await ExternalLLMClient.models(configuration: configuration)) ?? []
+            async let test = Self.testResult(configuration)
+            let (models, result) = await (listedModels, test)
+            // Changed meanwhile: the outcome is the old settings'.
+            guard configuration == externalLLMConfiguration else { return }
+
+            externalLLMModels = models
+            switch result {
+            case let .success(result):
+                let seconds = result.duration / .seconds(1)
+                externalLLMMessage = ("Answered in \(seconds.formatted(.number.precision(.fractionLength(1)))) s: \u{201C}\(result.text)\u{201D}", true)
+            case let .failure(error):
+                externalLLMMessage = (error.localizedDescription, false)
+            }
+        }
+    }
+
+    private nonisolated static func testResult(
+        _ configuration: ExternalLLMConfiguration
+    ) async -> Result<(text: String, duration: Duration), Error> {
+        do {
+            return .success(try await TranscriptCleanupService.testExternalLLM(configuration))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    nonisolated static func externalLLMAPIKey(for provider: ExternalLLMProvider) -> String {
+        Keychain.data(for: externalLLMKeyAccount(provider)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+
+    private nonisolated static func externalLLMKeyAccount(_ provider: ExternalLLMProvider) -> String {
+        "external-llm-key.\(provider.rawValue)"
     }
 
     func download(_ model: TranscriptionModel) {

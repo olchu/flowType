@@ -6,7 +6,8 @@ import AppKit
 ///   `--settings-pane models` picks the pane;
 /// - `--appearance dark` or `light` overrides the system appearance;
 /// - `--cleanup-transcript "…"` and `--prewarm-cleanup-model` run the text
-///   cleanup from the command line, with `--cleanup-model "Qwen3 4B"`;
+///   cleanup from the command line, with `--cleanup-model "Qwen3 4B"`, or
+///   with `--cleanup-mode "External LLM"` through the model in the settings;
 /// - `--record-indicator Aurora` writes the indicator's frames as PNGs to
 ///   `--record-output dir`, with `--indicator-color Violet` (or a palette),
 ///   `--record-scale 3` and `--record-background 0d1322`.
@@ -21,6 +22,7 @@ enum LaunchArguments {
     static let cleanupTranscript = value(after: "--cleanup-transcript")
     static let prewarmsCleanupModel = has("--prewarm-cleanup-model")
     static let cleanupModel = value(after: "--cleanup-model").flatMap(CleanupLLMModel.init(rawValue:))
+    static let cleanupMode = value(after: "--cleanup-mode").flatMap(TranscriptCleanupMode.init(rawValue:))
     /// An IndicatorStyle raw value, checked by IndicatorRecorder.
     static let recordedIndicator = value(after: "--record-indicator")
     static let recordOutput = value(after: "--record-output") ?? "indicator-frames"
