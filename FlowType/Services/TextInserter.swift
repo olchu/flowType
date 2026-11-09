@@ -57,6 +57,12 @@ final class TextInserter {
         pasteService.copyText(text)
     }
 
+    /// Gives the clipboard back before the app quits, rather than when the
+    /// paste target is done reading it.
+    func restoreClipboard() {
+        pasteService.settlePendingRestore()
+    }
+
     /// The user typed or clicked: the cursor may no longer be after the last
     /// dictation.
     func forgetLastInsertion() {

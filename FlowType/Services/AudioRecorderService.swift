@@ -32,10 +32,55 @@ final class AudioRecorderService {
             throw AudioRecorderError.alreadyRecording
         }
 
+        samples.removeAll(keepingCapacity: true)
+        let (engine, sampleRate) = try AudioInputStall.run {
+            try Self.startEngine(inputDeviceID: inputDeviceID) { [weak self] samples, level, bands in
+                Task { @MainActor in
+                    self?.appendSamples(samples, level: level, bands: bands)
+                }
+            }
+        } discardingLateResult: { engine, _ in
+            Self.stop(engine)
+        }
+
+        self.sampleRate = sampleRate
+        self.engine = engine
+    }
+
+    func stopRecording() -> RecordedAudio {
+        guard let engine else {
+            return RecordedAudio(samples: [], sampleRate: sampleRate)
+        }
+
+        self.engine = nil
+        // The samples are already here; a stall only costs the restart.
+        try? AudioInputStall.run {
+            Self.stop(engine)
+        }
+        onLevelChanged?(0, .zero)
+
+        // Resampled once here so the VAD and the decoders all get audio at
+        // their native rate instead of each converting the whole recording.
+        return RecordedAudio(samples: samples, sampleRate: sampleRate)
+            .resampled(to: RecordedAudio.speechSampleRate)
+    }
+
+    private func appendSamples(_ newSamples: [Float], level: Double, bands: SpectrumBands) {
+        // Buffers queued before the engine stopped.
+        guard isRecording else { return }
+        samples.append(contentsOf: newSamples)
+        onLevelChanged?(level, bands)
+    }
+
+    /// Everything that talks to the device, which is what may hang.
+    nonisolated private static func startEngine(
+        inputDeviceID: AudioDeviceID?,
+        onBuffer: @escaping @Sendable (_ samples: [Float], _ level: Double, _ bands: SpectrumBands) -> Void
+    ) throws -> (engine: AVAudioEngine, sampleRate: Double) {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         if let inputDeviceID {
-            Self.select(inputDeviceID, for: inputNode)
+            select(inputDeviceID, for: inputNode)
         }
         // Not outputFormat: it stays on the system's microphone after
         // selecting another, and a tap in a rate the device doesn't run at
@@ -46,11 +91,9 @@ final class AudioRecorderService {
             throw AudioRecorderError.noInputDevice
         }
 
-        samples.removeAll(keepingCapacity: true)
-        sampleRate = format.sampleRate
         let analyzer = SpectrumAnalyzer(sampleRate: format.sampleRate)
 
-        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
             guard let channelData = buffer.floatChannelData else { return }
 
             let frameCount = Int(buffer.frameLength)
@@ -71,44 +114,31 @@ final class AudioRecorderService {
                 sumSquares += monoSample * monoSample
             }
 
-            let level = Self.level(sumSquares: sumSquares, frameCount: frameCount)
-            let bands = analyzer?.bands(of: monoSamples) ?? .zero
-
-            Task { @MainActor in
-                self?.appendSamples(monoSamples, level: level, bands: bands)
-            }
+            onBuffer(
+                monoSamples,
+                level(sumSquares: sumSquares, frameCount: frameCount),
+                analyzer?.bands(of: monoSamples) ?? .zero
+            )
         }
 
         engine.prepare()
-        try engine.start()
-
-        self.engine = engine
-    }
-
-    func stopRecording() -> RecordedAudio {
-        guard isRecording else {
-            return RecordedAudio(samples: [], sampleRate: sampleRate)
+        do {
+            try engine.start()
+        } catch {
+            inputNode.removeTap(onBus: 0)
+            throw error
         }
-
-        engine?.inputNode.removeTap(onBus: 0)
-        engine?.stop()
-        engine = nil
-        onLevelChanged?(0, .zero)
-
-        // Resampled once here so the VAD and the decoders all get audio at
-        // their native rate instead of each converting the whole recording.
-        return RecordedAudio(samples: samples, sampleRate: sampleRate)
-            .resampled(to: RecordedAudio.speechSampleRate)
+        return (engine, format.sampleRate)
     }
 
-    private func appendSamples(_ newSamples: [Float], level: Double, bands: SpectrumBands) {
-        samples.append(contentsOf: newSamples)
-        onLevelChanged?(level, bands)
+    nonisolated private static func stop(_ engine: AVAudioEngine) {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
     }
 
     /// A device that can't be selected leaves the node on the system's
     /// microphone, which beats not recording at all.
-    private static func select(_ deviceID: AudioDeviceID, for inputNode: AVAudioInputNode) {
+    nonisolated private static func select(_ deviceID: AudioDeviceID, for inputNode: AVAudioInputNode) {
         guard let audioUnit = inputNode.audioUnit else { return }
         var deviceID = deviceID
         AudioUnitSetProperty(
@@ -128,5 +158,4 @@ final class AudioRecorderService {
         // speech while silence below the noise floor stays at zero.
         return pow(Double(min(1, gated / usableRange)), 0.6)
     }
-
 }

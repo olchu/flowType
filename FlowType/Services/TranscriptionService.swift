@@ -365,12 +365,23 @@ nonisolated private final class InputDeviceAudioProcessor: AudioProcessing, @unc
         set { base.relativeEnergyWindow = newValue }
     }
 
+    // The engine is opened and closed like AudioRecorderService's, as it can
+    // hang the same way; a stalled stream leaves the dictation to the full
+    // decode of that recording.
     func startRecordingLive(inputDeviceID: DeviceID?, callback: (([Float]) -> Void)?) throws {
-        try base.startRecordingLive(inputDeviceID: self.inputDeviceID, callback: callback)
+        try AudioInputStall.run { [self] in
+            try base.startRecordingLive(inputDeviceID: self.inputDeviceID, callback: callback)
+        } discardingLateResult: { [self] in
+            base.stopRecording()
+        }
     }
 
     func resumeRecordingLive(inputDeviceID: DeviceID?, callback: (([Float]) -> Void)?) throws {
-        try base.resumeRecordingLive(inputDeviceID: self.inputDeviceID, callback: callback)
+        try AudioInputStall.run { [self] in
+            try base.resumeRecordingLive(inputDeviceID: self.inputDeviceID, callback: callback)
+        } discardingLateResult: { [self] in
+            base.stopRecording()
+        }
     }
 
     func startStreamingRecordingLive(
@@ -381,7 +392,7 @@ nonisolated private final class InputDeviceAudioProcessor: AudioProcessing, @unc
 
     func purgeAudioSamples(keepingLast keep: Int) { base.purgeAudioSamples(keepingLast: keep) }
     func pauseRecording() { base.pauseRecording() }
-    func stopRecording() { base.stopRecording() }
+    func stopRecording() { try? AudioInputStall.run { [self] in base.stopRecording() } }
 
     func padOrTrim(fromArray audioArray: [Float], startAt startIndex: Int, toLength frameLength: Int) -> (any AudioProcessorOutputType)? {
         base.padOrTrim(fromArray: audioArray, startAt: startIndex, toLength: frameLength)

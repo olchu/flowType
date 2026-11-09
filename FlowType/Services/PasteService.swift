@@ -175,7 +175,8 @@ final class PasteService {
         settlePendingRestore()
     }
 
-    private func settlePendingRestore() {
+    /// Puts the user's clipboard back now if a paste still holds it.
+    func settlePendingRestore() {
         guard let pending = pendingRestore else { return }
 
         pendingRestore = nil

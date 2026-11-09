@@ -17,6 +17,9 @@ final class AppState: ObservableObject {
             }
             updateFloatingIndicator()
             updateEscapeInterception()
+            if needsRestart {
+                restartWhenIdle()
+            }
         }
     }
     @Published var settings = AppSettings() {
@@ -133,6 +136,10 @@ final class AppState: ObservableObject {
     /// the history goes.
     private var lastActiveApplication = NSWorkspace.shared.frontmostApplication
     private var applicationActivation: AnyCancellable?
+    private var audioInputStall: AnyCancellable?
+    /// Set once a microphone call has hung; see AudioInputStall.
+    private var needsRestart = false
+    private var pendingRestart: Task<Void, Never>?
     private var streamingTranscriptionTask: Task<Void, Never>?
     /// Processing of the last dictation, or the stream shutdown of a cancelled
     /// one. The next dictation's stream waits for it: the stream and the final
@@ -176,6 +183,12 @@ final class AppState: ObservableObject {
         audioRecorder.onLevelChanged = { [weak self] level, bands in
             guard let self else { return }
             updateAudioLevel(level, bands: bands)
+        }
+        audioInputStall = NotificationCenter.default.publisher(for: AudioInputStall.notification)
+            .sink { [weak self] _ in self?.restartWhenIdle() }
+        if UserDefaults.standard.bool(forKey: Self.restartedAfterAudioStallKey) {
+            UserDefaults.standard.removeObject(forKey: Self.restartedAfterAudioStallKey)
+            lastErrorMessage = "Flow Type restarted because macOS stopped answering for the microphone."
         }
         microphones = AudioInputDevices.all()
         AudioInputDevices.onChange { [weak self] in
@@ -1019,6 +1032,51 @@ final class AppState: ObservableObject {
     private func beep() {
         if settings.playsSounds {
             NSSound.beep()
+        }
+    }
+
+    private static let restartedAfterAudioStallKey = "restartedAfterAudioStall"
+
+    private var isIdle: Bool {
+        (status == .ready || status == .error) && !isPasting
+    }
+
+    /// A hung microphone call keeps spinning on its thread until the process
+    /// exits, and the next one is likely to hang behind the same device, so
+    /// the app starts afresh. A dictation in progress is delivered first.
+    private func restartWhenIdle() {
+        needsRestart = true
+        guard isIdle, pendingRestart == nil else { return }
+
+        pendingRestart = Task { [weak self] in
+            // Lets the pasted confirmation show and the paste target read
+            // the clipboard.
+            try? await Task.sleep(for: .seconds(2))
+            guard let self else { return }
+            pendingRestart = nil
+            // Otherwise the next change of status tries again.
+            guard isIdle else { return }
+            restart()
+        }
+    }
+
+    private func restart() {
+        needsRestart = false
+        textInserter.restoreClipboard()
+        UserDefaults.standard.set(true, forKey: Self.restartedAfterAudioStallKey)
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        configuration.activates = false
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
+            Task { @MainActor [weak self] in
+                guard error == nil else {
+                    UserDefaults.standard.removeObject(forKey: Self.restartedAfterAudioStallKey)
+                    self?.lastErrorMessage = "macOS stopped answering for the microphone. Quit and reopen Flow Type to bring it back."
+                    return
+                }
+                NSApp.terminate(nil)
+            }
         }
     }
 
